@@ -153,7 +153,9 @@
       const cached = await store.get(raw.items.map(key));
       const todo = raw.items.filter(it => !cached[key(it)]);
       if (todo.length) {
-        const { items } = await Api.extract(todo.map(({ id, title, body }) => ({ id, title, body })));
+        // 추출 실패(서버 꺼짐·미구현)해도 공지는 그대로 보여줌
+        const items = await Api.extract(todo.map(({ id, title, body }) => ({ id, title, body })))
+          .then(r => r.items || [], () => []);
         const fresh = {};
         items.forEach(x => {
           const src = todo.find(t => t.id === x.id);
