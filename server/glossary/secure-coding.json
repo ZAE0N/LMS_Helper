@@ -5,9 +5,9 @@
     {"term": "XSS", "rule": "keep", "translations": {}, "note": ""},
     {"term": "CSRF", "rule": "keep", "translations": {}, "note": ""},
     {"term": "PreparedStatement", "rule": "keep", "translations": {}, "note": ""},
-    {"term": "입력값 검증", "rule": "bilingual", "translations": {"en": "input validation", "ru": ""}, "note": ""},
-    {"term": "시큐어코딩", "rule": "bilingual", "translations": {"en": "secure coding", "ru": ""}, "note": ""},
-    {"term": "인증", "rule": "bilingual", "translations": {"en": "authentication", "ru": ""}, "note": "인가와 구분"},
-    {"term": "인가", "rule": "bilingual", "translations": {"en": "authorization", "ru": ""}, "note": "인증과 구분"}
+    {"term": "입력값 검증", "rule": "bilingual", "translations": {"en": "input validation", "ru": "проверка входных данных"}, "note": ""},
+    {"term": "시큐어코딩", "rule": "bilingual", "translations": {"en": "secure coding", "ru": "безопасное программирование"}, "note": ""},
+    {"term": "인증", "rule": "bilingual", "translations": {"en": "authentication", "ru": "аутентификация"}, "note": "인가와 구분"},
+    {"term": "인가", "rule": "bilingual", "translations": {"en": "authorization", "ru": "авторизация"}, "note": "인증과 구분"}
   ]
 }

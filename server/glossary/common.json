@@ -1,16 +1,16 @@
 {
   "description": "학사·과제 공통 용어. translations에 언어 코드(en, ru)별 번역어를 채우면 됨",
   "terms": [
-    {"term": "과제", "rule": "fixed", "translations": {"en": "assignment", "ru": ""}, "note": ""},
-    {"term": "출석", "rule": "fixed", "translations": {"en": "attendance", "ru": ""}, "note": ""},
-    {"term": "학점", "rule": "fixed", "translations": {"en": "credit", "ru": ""}, "note": ""},
-    {"term": "장학금", "rule": "fixed", "translations": {"en": "scholarship", "ru": ""}, "note": ""},
-    {"term": "중간고사", "rule": "fixed", "translations": {"en": "midterm exam", "ru": ""}, "note": ""},
-    {"term": "기말고사", "rule": "fixed", "translations": {"en": "final exam", "ru": ""}, "note": ""},
-    {"term": "수강신청", "rule": "bilingual", "translations": {"en": "course registration", "ru": ""}, "note": "학교 시스템 메뉴명과 같아야 함"},
-    {"term": "재수강", "rule": "bilingual", "translations": {"en": "course retake", "ru": ""}, "note": ""},
-    {"term": "결석계", "rule": "bilingual", "translations": {"en": "absence report", "ru": ""}, "note": "제출 서류명"},
-    {"term": "출석인정", "rule": "bilingual", "translations": {"en": "excused absence", "ru": ""}, "note": ""},
-    {"term": "휴학", "rule": "bilingual", "translations": {"en": "leave of absence", "ru": ""}, "note": "체류자격과 연관"}
+    {"term": "과제", "rule": "fixed", "translations": {"en": "assignment", "ru": "задание"}, "note": ""},
+    {"term": "출석", "rule": "fixed", "translations": {"en": "attendance", "ru": "посещаемость"}, "note": ""},
+    {"term": "학점", "rule": "fixed", "translations": {"en": "credit", "ru": "кредит"}, "note": ""},
+    {"term": "장학금", "rule": "fixed", "translations": {"en": "scholarship", "ru": "стипендия"}, "note": ""},
+    {"term": "중간고사", "rule": "fixed", "translations": {"en": "midterm exam", "ru": "промежуточный экзамен"}, "note": ""},
+    {"term": "기말고사", "rule": "fixed", "translations": {"en": "final exam", "ru": "итоговый экзамен"}, "note": ""},
+    {"term": "수강신청", "rule": "bilingual", "translations": {"en": "course registration", "ru": "регистрация на курсы"}, "note": "학교 시스템 메뉴명과 같아야 함"},
+    {"term": "재수강", "rule": "bilingual", "translations": {"en": "course retake", "ru": "повторное прохождение курса"}, "note": ""},
+    {"term": "결석계", "rule": "bilingual", "translations": {"en": "absence report", "ru": "заявление об отсутствии"}, "note": "제출 서류명"},
+    {"term": "출석인정", "rule": "bilingual", "translations": {"en": "excused absence", "ru": "зачёт пропуска как присутствия"}, "note": ""},
+    {"term": "휴학", "rule": "bilingual", "translations": {"en": "leave of absence", "ru": "академический отпуск"}, "note": "체류자격과 연관"}
   ]
 }
