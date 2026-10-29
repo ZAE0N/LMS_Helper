@@ -1,0 +1,13 @@
+{
+  "description": "시큐어코딩 과목 용어 예시. candidates 명령으로 후보를 뽑아 팀원이 검수 후 추가",
+  "terms": [
+    {"term": "SQL Injection", "rule": "keep", "translations": {}, "note": ""},
+    {"term": "XSS", "rule": "keep", "translations": {}, "note": ""},
+    {"term": "CSRF", "rule": "keep", "translations": {}, "note": ""},
+    {"term": "PreparedStatement", "rule": "keep", "translations": {}, "note": ""},
+    {"term": "입력값 검증", "rule": "bilingual", "translations": {"en": "input validation", "mn": ""}, "note": ""},
+    {"term": "시큐어코딩", "rule": "bilingual", "translations": {"en": "secure coding", "mn": ""}, "note": ""},
+    {"term": "인증", "rule": "bilingual", "translations": {"en": "authentication", "mn": ""}, "note": "인가와 구분"},
+    {"term": "인가", "rule": "bilingual", "translations": {"en": "authorization", "mn": ""}, "note": "인증과 구분"}
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "학사·과제 공통 용어. translations에 언어 코드(mn, vi, uz, ne, zh, en)별 번역어를 채우면 됨",
+  "terms": [
+    {"term": "과제", "rule": "fixed", "translations": {"en": "assignment", "mn": ""}, "note": ""},
+    {"term": "출석", "rule": "fixed", "translations": {"en": "attendance", "mn": ""}, "note": ""},
+    {"term": "학점", "rule": "fixed", "translations": {"en": "credit", "mn": ""}, "note": ""},
+    {"term": "장학금", "rule": "fixed", "translations": {"en": "scholarship", "mn": ""}, "note": ""},
+    {"term": "중간고사", "rule": "fixed", "translations": {"en": "midterm exam", "mn": ""}, "note": ""},
+    {"term": "기말고사", "rule": "fixed", "translations": {"en": "final exam", "mn": ""}, "note": ""},
+    {"term": "수강신청", "rule": "bilingual", "translations": {"en": "course registration", "mn": ""}, "note": "학교 시스템 메뉴명과 같아야 함"},
+    {"term": "재수강", "rule": "bilingual", "translations": {"en": "course retake", "mn": ""}, "note": ""},
+    {"term": "결석계", "rule": "bilingual", "translations": {"en": "absence report", "mn": ""}, "note": "제출 서류명"},
+    {"term": "출석인정", "rule": "bilingual", "translations": {"en": "excused absence", "mn": ""}, "note": ""},
+    {"term": "휴학", "rule": "bilingual", "translations": {"en": "leave of absence", "mn": ""}, "note": "체류자격과 연관"}
+  ]
+}
