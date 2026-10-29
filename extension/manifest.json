@@ -11,8 +11,8 @@
   "content_scripts": [
     {
       "matches": ["https://lms-app.inhatc.ac.kr/*"],
-      "js": ["content.js"],
-      "css": ["theme.css"],
+      "js": ["config.js", "mock.js", "content.js", "widgets.js"],
+      "css": ["theme.css", "widgets.css"],
       "run_at": "document_start"
     }
   ]
