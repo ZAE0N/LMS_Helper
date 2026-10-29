@@ -14,8 +14,11 @@
 
 ## 2. 구조
 ```
-LMS 화면 ─ extension/content.js (로그인 세션으로 Canvas API 읽기, 테마 CSS)
-            extension/sidepanel.* (공지 · 교안 뷰어 · 챗봇 · 복습 문제 · 리포트)
+LMS 페이지 ─ extension/content.js  (로그인 세션으로 Canvas API 읽기, 크롬 번역 감지, 상단 안내, 테마)
+            extension/widgets.*   (오른쪽 서랍: 알림 · 교안(과목별) · 복습. 한국어 → 크롬 번역)
+               │  서버 요청은 background.js가 대신 보냄 (CORS)
+확장 화면  ─ extension/viewer.*    (교안 뷰어 + 챗봇, 복습 문제, 리포트. 영어·러시아어 i18n.js)
+            extension/sidepanel.* (교안 언어 설정, 테마, 개발용 진단)
                ⇅ HTTP (JSON)
           server/ (LLM API 키는 서버에만)
 ```
@@ -122,8 +125,8 @@ LMS 페이지 오른쪽 서랍의 알림 탭: **수업**(LMS 강의 공지) · *
   - 원래 주소(사람이 보는 페이지): 학교 `https://www.inhatc.ac.kr/kr/460/subview.do`, 학과 `https://cs.inhatc.ac.kr/cs/1754/subview.do`
 
 ### 번역
-- 교안·공지 번역은 모두 `server/app/translate.py`의 용어집 파이프라인(`translate_text`)을 거친다.
-- 마감일은 LLM이 뽑은 날짜가 원문에 실제로 있을 때만 채운다. 없으면 `null`.
+- AI 번역은 교안에만 쓰고, 반드시 `server/app/translate.py`의 용어집 파이프라인(`translate_text`)을 거친다. 공지는 번역하지 않는다 (한국어 그대로, 크롬 번역 담당).
+- 공지의 마감일·할 일은 한국어로 추출한다. 마감일은 LLM이 뽑은 날짜가 원문에 실제로 있을 때만 채운다. 없으면 `null`.
 - 챗봇·문제는 교안 내용에만 근거하고 출처 페이지를 반드시 붙인다.
 
 ## 5. 코드 작성 규칙
