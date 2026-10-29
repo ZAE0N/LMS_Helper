@@ -20,10 +20,10 @@
 | `fixed` | 고정 번역 | 용어집에 정한 번역어로 항상 똑같이 | `과제` → 항상 `assignment` | 자주 나오는 일반 학사 용어 |
 | `bilingual` | 원문 병기 | 번역어 뒤에 한국어 원문을 괄호로 | `입력값 검증` → `input validation (입력값 검증)` | 시험·수업·학교 서류에 한국어로 나오는 핵심 개념 |
 
-- `fixed`인데 해당 언어 번역어가 비어 있으면(`"mn": ""`) 자동으로 `bilingual`로 처리하고 `needs_review`에 표시. 채우면 다음부터 `fixed`로 동작
+- `fixed`인데 해당 언어 번역어가 비어 있으면(`"ru": ""`) 자동으로 `bilingual`로 처리하고 `needs_review`에 표시. 채우면 다음부터 `fixed`로 동작
 - 번역어 칸에 예시 문구를 넣지 말 것 (그 문구가 실제 번역어로 쓰임)
 - 한국어 용어는 단독 또는 조사가 붙은 경우만 인식 ("인가"는 "무엇인가"에 걸리지 않음)
-- 지원 언어 코드: `mn vi uz ne zh en` (`app/translate.py`의 `LANGS`)
+- 지원 언어 코드: `en ru` (필요 시 `ja`) (`app/translate.py`의 `LANGS`)
 
 ### 새 과목 용어집 만들기
 ```bash
@@ -38,7 +38,7 @@ cp .env.example .env        # 값 채우기
 set -a; source .env; set +a
 uvicorn app.main:app --port 8000
 ```
-- 확장 프로그램 없이 테스트: `python -m app.cli translate 교안.pdf --lang mn --course secure-coding`
+- 확장 프로그램 없이 테스트: `python -m app.cli translate 교안.pdf --lang ru --course secure-coding`
 - 테스트: `python -m pytest -q`
 
 ## API

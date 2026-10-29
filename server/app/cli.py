@@ -1,5 +1,5 @@
 """확장 프로그램 없이 로컬에서 테스트
-python -m app.cli translate 교안.pdf --lang mn --course secure-coding
+python -m app.cli translate 교안.pdf --lang ru --course secure-coding
 python -m app.cli candidates 교안.pdf --no-llm > glossary/new-course.json
 """
 import argparse

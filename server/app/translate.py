@@ -9,12 +9,16 @@ from .llm import LLM
 from .pdf import split_chunks
 
 LANGS = {
-    "mn": "Mongolian",
-    "vi": "Vietnamese",
-    "uz": "Uzbek",
-    "ne": "Nepali",
-    "zh": "Simplified Chinese",
     "en": "English",
+    "ru": "Russian",
+
+    # 하단 목록은 추가 가능 부분. MVP에서는 영어, 러시아어만
+    # "ja": "Japanese",
+    # "mn": "Mongolian",
+    # "vi": "Vietnamese",
+    # "uz": "Uzbek",
+    # "ne": "Nepali",
+    # "zh": "Simplified Chinese"
 }
 HANGUL = re.compile(r"[가-힣]")
 UNTRANSLATED_RATIO = 0.15

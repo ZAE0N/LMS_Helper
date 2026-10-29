@@ -114,7 +114,7 @@ def test_issues_reported_when_still_broken(terms):
 
 
 def test_missing_fixed_translation_falls_back_to_bilingual():
-    r = service.translate_pdf(make_pdf("과제는 금요일까지 제출한다."), "mn", None, FakeLLM())
+    r = service.translate_pdf(make_pdf("과제는 금요일까지 제출한다."), "ru", None, FakeLLM())
     assert "과제" in r["needs_review"]
     assert "(과제)" in r["pages"][0]["translated"]
 

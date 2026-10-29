@@ -21,11 +21,11 @@ LMS 화면 ─ extension/content.js (로그인 세션으로 Canvas API 읽기, �
 ```
 - 개발 서버 주소: `http://localhost:8000` (확장은 `extension/config.js` 한 곳에서 관리, 바꾸면 `manifest.json`의 `host_permissions`도 함께)
 - 사용자 구분: 로그인 없음. 확장 설치 시 만든 `anon_id`(UUID)만 사용
-- 언어 코드: `mn vi uz ne zh en`
+- 언어 코드: `en` `ru` (필요 시 `ja`)
 
 ## 3. API 약속
 오류는 HTTP 4xx/5xx + `{"detail": "메시지"}`.
-언어 코드: `en`(영어) · `ru`(러시아어) · `ja`(일본어, 필요 시 추가, 현재는 일본어만)
+언어 코드: `en`(영어) · `ru`(러시아어) · `ja`(일본어, 필요 시 추가. MVP는 영어·러시아어만)
 
 ### 교안
 - `POST /documents` — multipart: `file`(PDF, **업로드 1회 최대 100MB**), `lang`, `course`(선택, 용어집 파일명)
@@ -82,7 +82,8 @@ LMS 화면 ─ extension/content.js (로그인 세션으로 Canvas API 읽기, �
 
 ### 리포트
 - `GET /report?anon_id=...&lang=en&doc_id=...` (`doc_id` 생략 시 전체)
-  → ```json
+  → 응답 예시:
+  ```json
   {
     "quizzes_taken": 3, "accuracy": 0.72,
     "accuracy_by_type": {"multiple": 0.8, "short": 0.5, "matching": 0.75},
@@ -91,7 +92,7 @@ LMS 화면 ─ extension/content.js (로그인 세션으로 Canvas API 읽기, �
     "exam_points": [{"point_tr": "시험 예상 포인트", "why_tr": "근거 설명", "pages": [3, 7]}],
     "summary_tr": "전체 학습 요약"
   }
-```
+  ```
 - `exam_points` 규칙: 교안 내용에만 근거 (반복 강조된 개념, 정의·비교·절차, 학생이 자주 틀린 부분), 근거 페이지 필수, 화면에는 **"시험 예상"**으로 표시 (확정 아님)
 
 ## 4. 반드시 지킬 것

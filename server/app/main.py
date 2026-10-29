@@ -9,7 +9,7 @@ from . import service
 from .llm import OpenAICompatible
 from .pdf import extract_pages
 
-MAX_PDF = 20 * 1024 * 1024
+MAX_PDF = 100 * 1024 * 1024
 COURSE_RE = re.compile(r"^[\w-]{1,64}$")
 
 app = FastAPI(title="LMS Helper Server")
