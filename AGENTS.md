@@ -23,15 +23,19 @@ LMS 화면 ─ extension/content.js (로그인 세션으로 Canvas API 읽기, �
 - 사용자 구분: 로그인 없음. 확장 설치 시 만든 `anon_id`(UUID)만 사용
 - 언어 코드: `mn vi uz ne zh en`
 
-## 3. API 약속 (v1)
+## 3. API 약속
 오류는 HTTP 4xx/5xx + `{"detail": "메시지"}`.
+언어 코드: `en`(영어) · `ru`(러시아어) · `ja`(일본어, 필요 시 추가, 현재는 일본어만)
 
 ### 교안
-- `POST /documents` — multipart: `file`(PDF), `lang`, `course`(선택, 용어집 파일명)
+- `POST /documents` — multipart: `file`(PDF, **업로드 1회 최대 100MB**), `lang`, `course`(선택, 용어집 파일명)
   → `{doc_id, lang, course, needs_review[], issue_pages[], pages: [{page, original, translated, terms[], issues[]}]}`
 - `GET /documents/{doc_id}` → 위와 동일
+- 서버는 PDF의 글자만 사용 (이미지 속 글자는 번역 X, 향후 개선 목록)
 
 ### 공지
+사이드 패널 탭: **수업**(LMS 강의 공지) · **학교** · **학과**
+
 공통 객체 `Notice`:
 ```json
 {
@@ -46,23 +50,49 @@ LMS 화면 ─ extension/content.js (로그인 세션으로 Canvas API 읽기, �
   "posted_at": "ISO 8601", "url": "원문 링크"
 }
 ```
-- `POST /notices/translate` — 강의 공지(확장 프로그램이 Canvas에서 읽은 것)
-  요청 `{lang, items: [{id, source: "course", course, title, body(평문), posted_at, updated_at, url}]}`
+- `POST /notices/translate` — 수업 탭용. 확장 프로그램이 Canvas에서 읽고 **HTML 태그를 제거한 평문**으로 보냄. 한 번에 최대 30건
+  요청 `{lang, items: [{id, source: "course", course, title, body, posted_at, updated_at, url}]}`
   → `{items: [Notice]}`
-- `GET /notices?source=school|dept&lang=mn&limit=20` → `{items: [Notice]}` (최신순)
+- `GET /notices?source=school|dept&lang=en&limit=10&page=1` — 학교·학과 탭용
+  - `limit`: 기본 10, 최대 30 (화면에서 10 / 20 / 30 선택)
+  - `page`: "더 보기"용, 1부터
+  → `{items: [Notice], page, has_more}` (최신순)
 
 ### 챗봇
-- `POST /chat` 요청 `{anon_id, doc_id, lang, question, history: [{role, content}] (최근 6개)}`
-  → `{answer, citations: [{page, quote}]}` — 교안에 근거가 없으면 그렇다고 답하고 `citations: []`
+- 대화 기록은 확장 프로그램이 교안별로 저장 (`summary` + 그 이후 `history`)
+- `POST /chat`
+  요청 `{anon_id, doc_id, lang, question, summary: "이전 대화 요약 또는 null", history: [{role, content}]}`
+  → `{answer, citations: [{page, quote}], summary: "새 요약 또는 null", kept: 숫자 또는 null}`
+- 대화 압축 규칙: `history`가 **16개(질문·답변 8쌍)를 넘으면** 서버가 오래된 메시지와 기존 요약을 합쳐 새 요약 1개로 압축하고, 최근 8개만 남김
+  - 응답의 `summary`가 null이 아니면 확장 프로그램은 저장된 요약을 교체하고 `history`를 최근 `kept`개만 남긴다
+- 교안에 근거가 없으면 그렇다고 답하고 `citations: []`
 
 ### 복습 문제
-- `POST /quiz` 요청 `{anon_id, doc_id, lang, count: 5}`
-  → `{quiz_id, questions: [{id, question, choices: [4개], answer_index, explanation, page}]}`
-- `POST /quiz/result` 요청 `{anon_id, quiz_id, answers: [{id, choice_index}]}` → `{score, total}`
+- 문제 유형 (사용자가 선택): `multiple` 객관식 · `short` 주관식 · `matching` 연결형
+- `POST /quiz`
+  요청 `{anon_id, doc_id, lang, count: 1~20 (기본 5), types: ["multiple", "short", "matching"] 중 선택, pages: [시작, 끝] 또는 null}`
+  → `{quiz_id, questions: [Question]}`
+- `Question` 공통: `{id, type, question, explanation, page}` + 유형별
+  - `multiple`: `choices` (4개), `answer_index` (0부터)
+  - `short`: `model_answer`, `keywords[]`
+  - `matching`: `pairs: [[왼쪽, 정답 오른쪽], ...]` (오른쪽 순서는 확장 프로그램이 섞어서 표시)
+- 채점: `multiple`·`matching`은 확장 프로그램이 직접 채점, `short`만 서버 채점
+- `POST /quiz/grade-short` 요청 `{lang, quiz_id, question_id, user_answer}` → `{is_correct, score: 0~100, reason_tr}`
+- `POST /quiz/result` 요청 `{anon_id, quiz_id, answers: [{id, correct: true/false}]}` → `{score, total}`
 
-### 리포트 (간단)
-- `GET /report?anon_id=...&lang=mn`
-  → `{quizzes_taken, accuracy, questions_asked, weak_pages: [{doc_id, page, wrong}], summary_tr}`
+### 리포트
+- `GET /report?anon_id=...&lang=en&doc_id=...` (`doc_id` 생략 시 전체)
+  → ```json
+  {
+    "quizzes_taken": 3, "accuracy": 0.72,
+    "accuracy_by_type": {"multiple": 0.8, "short": 0.5, "matching": 0.75},
+    "questions_asked": 12,
+    "weak_pages": [{"doc_id": "...", "page": 7, "wrong": 3}],
+    "exam_points": [{"point_tr": "시험 예상 포인트", "why_tr": "근거 설명", "pages": [3, 7]}],
+    "summary_tr": "전체 학습 요약"
+  }
+```
+- `exam_points` 규칙: 교안 내용에만 근거 (반복 강조된 개념, 정의·비교·절차, 학생이 자주 틀린 부분), 근거 페이지 필수, 화면에는 **"시험 예상"**으로 표시 (확정 아님)
 
 ## 4. 반드시 지킬 것
 ### 보안·개인정보
