@@ -35,9 +35,11 @@ python -m app.cli candidates 교안.pdf > glossary/data-analysis.json   # LLM �
 ```bash
 pip install -r requirements.txt
 cp .env.example .env        # 값 채우기
-set -a; source .env; set +a
 uvicorn app.main:app --port 8000
 ```
+- `.env`는 서버와 CLI가 `server/.env`에서 자동으로 읽음. 이미 설정된 환경변수가 우선.
+- macOS 최초 설정 (저장소 루트): `python3 -m venv server/.venv`, `source server/.venv/bin/activate`, `cd server`, `pip install -r requirements.txt`.
+- `.env`의 `LLM_API_KEY`를 채우고 `LLM_MODEL=gpt-4o-mini` 설정. 키를 채팅·커밋·캡처에 포함하지 않음.
 - 확장 프로그램 없이 테스트: `python -m app.cli translate 교안.pdf --lang ru --course secure-coding`
 - 테스트: `python -m pytest -q`
 
@@ -47,6 +49,19 @@ uvicorn app.main:app --port 8000
 | POST | `/documents` | `file`(PDF), `lang`, `course`(선택) | `doc_id`, `pages[] {page, original, translated, terms, issues}`, `issue_pages`, `needs_review` |
 | GET | `/documents/{doc_id}` | | 저장된 결과 |
 | POST | `/glossary/candidates` | `file`, `use_llm` | 검수용 용어 후보 |
+| GET | `/notices` | `source=school 또는 dept`, `lang=en 또는 ru`, `limit=1~30` (기본 10), `page>=1` | `items`, `page`, `has_more` |
+
+## 공지 수집 (1차 구현)
+- 학교·학과 게시판의 최근 3페이지를 수집. `NOTICE_CRAWL_PAGES` 환경변수로 범위 조절.
+- 페이지 선택은 이 수집 범위 안에서 동작하며 `has_more`는 저장된 목록 기준. 전체 과거 공지 검색은 아직 지원하지 않음.
+- 최초 요청 시 수집하므로 수십 초 걸릴 수 있음. 이후 같은 게시판은 30분간 디스크 캐시 사용.
+- `robots.txt` 확인, `LMS-Helper/0.1` User-Agent, 요청 간격 1초 이상, 기존 글 본문은 재요청하지 않음.
+- 수집 실패·robots 차단 시 HTTP 503 + `detail`. 실패 후에도 30분간 재수집하지 않음.
+- 중복 수집 방지를 위해 서버는 **worker 1개**로 실행. 여러 프로세스·인스턴스 운영은 아직 미지원.
+- 원문 제목·본문은 `data/notices/`에 보관. 원문 링크로 전체 내용을 확인할 수 있음.
+- 번역은 다음 단계: `title_tr`, `summary_tr`, `body_tr`는 빈 문자열, `deadline`, `deadline_text`, `action_tr`는 null. `lang` 검증은 수행하지만 아직 번역에 사용하지 않음.
+- 번역을 추가할 때는 반드시 `translate_text` 용어집 파이프라인을 사용.
+- 확인: `/notices?source=school&lang=ru&limit=10&page=1` 및 `source=dept`.
 
 ## 주의
 - 로컬 또는 접근이 제한된 환경에서만 실행 (번역된 교안이 외부에 공개되지 않게)
