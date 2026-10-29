@@ -22,6 +22,7 @@ LMS 화면 ─ extension/content.js (로그인 세션으로 Canvas API 읽기, �
 - 개발 서버 주소: `http://localhost:8000` (확장은 `extension/config.js` 한 곳에서 관리, 바꾸면 `manifest.json`의 `host_permissions`도 함께)
 - 사용자 구분: 로그인 없음. 확장 설치 시 만든 `anon_id`(UUID)만 사용
 - 언어 코드: `en` `ru` (필요 시 `ja`)
+- 코드에 `localhost` 등 서버 주소를 쓰지 않는다. 확장은 `CONFIG.SERVER_URL`, 서버는 환경변수만 사용
 
 ## 3. API 약속
 오류는 HTTP 4xx/5xx + `{"detail": "메시지"}`.
