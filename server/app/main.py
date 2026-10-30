@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Literal
 from uuid import UUID
+import httpx
 
 from .settings import load_environment
 
@@ -16,11 +17,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import candidates as cand
 from . import service
 from .chat import ChatError, ChatRequest, ChatResponse, DocumentNotFound, answer_chat
+from .llm import OpenAICompatible
 from .learning import LearningStoreError, QuizConflict, QuizForbidden, QuizNotFound, QuizSubmissionError, get_learning_store
 from .grading import GradeError, GradeResponse, GradeShortRequest, QuizResultRequest, ResultResponse, grade_short
 from .quiz import QuizDocumentNotFound, QuizError, QuizInputError, QuizRequest, QuizResponse, generate_quiz
 from .report import ReportDocumentNotFound, ReportError, ReportResponse, get_report_builder
-from .llm import OpenAICompatible
 from .pdf import extract_pages
 from .notices import NoticeError, get_crawler
 from .notice_extract import ExtractRequest, NoticeExtractionError, get_extractor
@@ -95,9 +96,12 @@ async def translate_document(file: UploadFile = File(...), lang: str = Form(...)
     if course and not COURSE_RE.match(course):
         raise HTTPException(400, "course 형식 오류")
     try:
-        return service.translate_pdf(await read_pdf(file), lang, course, llm())
+        data = await read_pdf(file)
+        return await asyncio.to_thread(service.translate_pdf, data, lang, course, llm())
     except (ValueError, FileNotFoundError) as e:
         raise HTTPException(400, str(e))
+    except httpx.HTTPError as e:
+        raise HTTPException(502, "교안을 번역할 수 없음. 잠시 후 다시 시도하세요.") from e
 
 
 @app.get("/documents/{doc_id}")

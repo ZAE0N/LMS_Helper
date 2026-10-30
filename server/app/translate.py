@@ -2,6 +2,7 @@ import hashlib
 import json
 import re
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 from . import glossary as g
 from . import protect as pr
@@ -105,7 +106,15 @@ class Cache:
         return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
     def put(self, k: str, v) -> None:
-        (self.root / f"{k}.json").write_text(json.dumps(v, ensure_ascii=False), encoding="utf-8")
+        temporary = None
+        try:
+            with NamedTemporaryFile(mode='w', encoding='utf-8', dir=self.root, suffix='.tmp', delete=False) as stream:
+                temporary = Path(stream.name)
+                json.dump(v, stream, ensure_ascii=False)
+            temporary.replace(self.root / f'{k}.json')
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
 
 def glossary_version(paths: list[Path]) -> str:
