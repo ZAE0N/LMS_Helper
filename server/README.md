@@ -50,7 +50,7 @@ uvicorn app.main:app --port 8000
 | GET | `/documents/{doc_id}` | | 저장된 결과 |
 | POST | `/glossary/candidates` | `file`, `use_llm` | 검수용 용어 후보 |
 | GET | `/notices` | `source=school 또는 dept`, `limit=1~30` (기본 10), `page>=1` | `items`, `page`, `has_more` |
-| POST | `/notices/extract` | `{items: [{id, title, body}]}` 최대 30건 | `{items: [{id, summary, deadline, deadline_text, action}]}` |
+| POST | `/notices/extract` | `{items: [{id, title, body, posted_at?}]}` 최대 30건 | `{items: [{id, summary, deadline, deadline_text, action}]}` |
 
 ## 공지 수집 및 한국어 정보 추출 (v3)
 - API 계약은 `ext/notice-tab`에서 합의한 공지 v3 형식. `lang` 없이 한국어 원문 `title`, `body`와 `summary`, `deadline`, `deadline_text`, `action`을 반환. `*_tr` 필드는 제거.
@@ -62,8 +62,8 @@ uvicorn app.main:app --port 8000
 - 날짜는 점·하이픈·슬래시 형식을 지원. 잘못된 날짜가 있는 행은 건너뛰어 다른 공지에 영향을 주지 않음.
 - 본문은 새 글만 요청. 요약·마감일·할 일은 공통 추출기로 처리하고 제목+본문의 내용 해시를 키로 저장. 동일 내용은 재시작·다른 ID·다른 API 경로에서도 LLM을 재호출하지 않음. 내용이 바뀌면 다시 추출.
 - 기존 원문 캐시는 재사용하고 아직 없는 추출 정보만 생성. 원문은 `data/notices/`, 추출 캐시는 `data/notice-extractions/`에 저장.
-- LLM 출력은 구조 검증. `deadline_text`가 원문에 실제로 존재하고 그 안의 연·월·일이 `deadline`과 일치할 때만 유지. 연도 없는 날짜·상대 날짜·추측한 날짜는 보수적으로 null 처리.
-- `POST /notices/extract`는 HTML 없는 평문을 받음. 최대 30건, 항목당 title 2,000자·body 100,000자. LLM 호출·출력 오류 시 HTTP 502 + `detail`; 실패한 결과는 캐시하지 않음.
+- LLM 출력은 구조 검증. `deadline_text`가 원문에 실제로 존재하고 그 안의 연·월·일이 `deadline`과 일치할 때만 유지. 월·일만 있으면 연도는 게시일 기준(90일 넘게 이전이면 다음 해). 상대 날짜·추측한 날짜는 null.
+- `POST /notices/extract`는 HTML 없는 평문을 받음. 최대 30건, 항목당 title 2,000자·body 100,000자. LLM 호출·출력 오류가 나도 200을 반환하고 그 글만 `summary` 등 네 값이 null. 키 없음·네트워크 오류면 같은 요청의 나머지 글은 LLM을 부르지 않음. 실패한 결과는 캐시하지 않음.
 - LLM은 `.env`의 설정 사용. 서버 시작 시 새 공지가 있으면 추출을 위해 유료 LLM API가 호출될 수 있음. 테스트는 가짜 LLM과 가짜 HTTP만 사용.
 - 중복 수집 방지를 위해 서버 worker는 **1개**로 실행. 여러 프로세스·인스턴스 운영의 공유 잠금은 미지원.
 - 확인: `/notices?source=school&limit=10&page=1` 및 `source=dept`.
