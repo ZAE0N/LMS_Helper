@@ -14,6 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import candidates as cand
 from . import service
+from .chat import ChatError, ChatRequest, ChatResponse, DocumentNotFound, answer_chat
+from .learning import LearningStoreError, get_learning_store
 from .llm import OpenAICompatible
 from .pdf import extract_pages
 from .notices import NoticeError, get_crawler
@@ -99,6 +101,21 @@ def get_document(doc_id: str):
     if not re.fullmatch(r"[0-9a-f]{64}", doc_id) or (doc := service.get_document(doc_id)) is None:
         raise HTTPException(404, "문서 없음")
     return doc
+
+
+@app.post("/chat", response_model=ChatResponse)
+def chat(request: ChatRequest) -> ChatResponse:
+    try:
+        store = get_learning_store()
+        response = answer_chat(request, llm)
+        store.record_question(str(request.anon_id), request.doc_id, request.lang)
+        return response
+    except DocumentNotFound as e:
+        raise HTTPException(404, "문서 없음") from e
+    except ChatError as e:
+        raise HTTPException(502, str(e)) from e
+    except LearningStoreError as e:
+        raise HTTPException(503, "학습 기록을 저장할 수 없음. 잠시 후 다시 시도하세요.") from e
 
 
 @app.post("/glossary/candidates")
