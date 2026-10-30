@@ -35,9 +35,11 @@ python -m app.cli candidates 교안.pdf > glossary/data-analysis.json   # LLM �
 ```bash
 pip install -r requirements.txt
 cp .env.example .env        # 값 채우기
-set -a; source .env; set +a
 uvicorn app.main:app --port 8000
 ```
+- `.env`는 서버와 CLI가 `server/.env`에서 자동으로 읽음. 이미 설정된 환경변수가 우선.
+- macOS 최초 설정 (저장소 루트): `python3 -m venv server/.venv`, `source server/.venv/bin/activate`, `cd server`, `pip install -r requirements.txt`.
+- `.env`의 `LLM_API_KEY`를 채우고 `LLM_MODEL=gpt-4o-mini` 설정. 키를 채팅·커밋·캡처에 포함하지 않음.
 - 확장 프로그램 없이 테스트: `python -m app.cli translate 교안.pdf --lang ru --course secure-coding`
 - 테스트: `python -m pytest -q`
 
@@ -47,6 +49,24 @@ uvicorn app.main:app --port 8000
 | POST | `/documents` | `file`(PDF), `lang`, `course`(선택) | `doc_id`, `pages[] {page, original, translated, terms, issues}`, `issue_pages`, `needs_review` |
 | GET | `/documents/{doc_id}` | | 저장된 결과 |
 | POST | `/glossary/candidates` | `file`, `use_llm` | 검수용 용어 후보 |
+| GET | `/notices` | `source=school 또는 dept`, `limit=1~30` (기본 10), `page>=1` | `items`, `page`, `has_more` |
+| POST | `/notices/extract` | `{items: [{id, title, body, posted_at?}]}` 최대 30건 | `{items: [{id, summary, deadline, deadline_text, action}]}` |
+
+## 공지 수집 및 한국어 정보 추출 (v3)
+- API 계약은 `ext/notice-tab`에서 합의한 공지 v3 형식. `lang` 없이 한국어 원문 `title`, `body`와 `summary`, `deadline`, `deadline_text`, `action`을 반환. `*_tr` 필드는 제거.
+- 학교·학과 게시판의 최근 3페이지를 수집. `NOTICE_CRAWL_PAGES`로 범위 조절. `has_more`는 이 수집 범위 기준이며 전체 과거 공지 검색은 아직 미지원.
+- 서버 시작 시 백그라운드 수집을 시작하고 주기적으로 갱신. GET 요청은 수집을 기다리지 않고 저장된 목록을 즉시 반환.
+- 저장된 목록이 아직 없으면 HTTP 503 + `detail`. 최초 수집 완료 후 다시 요청. 정상적으로 수집한 빈 목록은 HTTP 200.
+- 성공 후 30분 간격으로 갱신. 실패 후 5분 간격 재시도. 실패·갱신 중에도 이전에 받은 목록(빈 목록 포함)은 계속 표시.
+- `robots.txt` 확인: 404는 허용, 금지 규칙·서버 오류·통신 오류는 수집 중지. User-Agent `LMS-Helper/0.1`, 사이트 요청 간격 1초 이상.
+- 날짜는 점·하이픈·슬래시 형식을 지원. 잘못된 날짜가 있는 행은 건너뛰어 다른 공지에 영향을 주지 않음.
+- 본문은 새 글만 요청. 요약·마감일·할 일은 공통 추출기로 처리하고 제목+본문의 내용 해시를 키로 저장. 동일 내용은 재시작·다른 ID·다른 API 경로에서도 LLM을 재호출하지 않음. 내용이 바뀌면 다시 추출.
+- 기존 원문 캐시는 재사용하고 아직 없는 추출 정보만 생성. 원문은 `data/notices/`, 추출 캐시는 `data/notice-extractions/`에 저장.
+- LLM 출력은 구조 검증. `deadline_text`가 원문에 실제로 존재하고 그 안의 연·월·일이 `deadline`과 일치할 때만 유지. 월·일만 있으면 연도는 게시일 기준(90일 넘게 이전이면 다음 해). 상대 날짜·추측한 날짜는 null.
+- `POST /notices/extract`는 HTML 없는 평문을 받음. 최대 30건, 항목당 title 2,000자·body 100,000자. LLM 호출·출력 오류가 나도 200을 반환하고 그 글만 `summary` 등 네 값이 null. 키 없음·네트워크 오류면 같은 요청의 나머지 글은 LLM을 부르지 않음. 실패한 결과는 캐시하지 않음.
+- LLM은 `.env`의 설정 사용. 서버 시작 시 새 공지가 있으면 추출을 위해 유료 LLM API가 호출될 수 있음. 테스트는 가짜 LLM과 가짜 HTTP만 사용.
+- 중복 수집 방지를 위해 서버 worker는 **1개**로 실행. 여러 프로세스·인스턴스 운영의 공유 잠금은 미지원.
+- 확인: `/notices?source=school&limit=10&page=1` 및 `source=dept`.
 
 ## 주의
 - 로컬 또는 접근이 제한된 환경에서만 실행 (번역된 교안이 외부에 공개되지 않게)

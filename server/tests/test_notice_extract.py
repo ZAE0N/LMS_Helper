@@ -1,0 +1,165 @@
+import json
+
+import httpx
+import pytest
+from fastapi.testclient import TestClient
+
+from app import main
+from app.notice_extract import NoticeExtractor, validated_facts
+from app.notices import NoticeCrawler
+
+
+def facts(deadline='2026-11-03', text='2026년 11월 3일'):
+    return json.dumps({'summary': '장학금 신청 안내', 'deadline': deadline, 'deadline_text': text, 'action': '신청서를 제출하세요'}, ensure_ascii=False)
+
+
+class FakeLLM:
+    def __init__(self, output=None):
+        self.calls = 0
+        self.output = output or facts()
+
+    def chat(self, system, user):
+        self.calls += 1
+        return self.output
+
+
+@pytest.mark.parametrize('text', ['2026년 11월 3일', '2026-11-03', '2026.11.03.', '2026/11/3'])
+def test_deadline_grounded_in_source(text):
+    result = validated_facts(facts(text=text), '신청', f'{text}까지 제출')
+    assert result['deadline'] == '2026-11-03' and result['deadline_text'] == text
+
+
+@pytest.mark.parametrize(('raw', 'body'), [
+    (facts(), '기한 없음'),
+    (facts('2026-11-04'), '2026년 11월 3일까지'),
+    (facts('2026-02-30', '2026년 2월 30일'), '2026년 2월 30일'),
+    (facts('2027-11-03', '11월 3일'), '11월 3일'),
+    (facts(), '2026-11-03까지'),
+    (facts('20261103'), '2026년 11월 3일'),
+    (facts(None, None), '마감 없음'),
+])
+def test_hallucinated_or_unverifiable_deadline_removed(raw, body):
+    result = validated_facts(raw, '신청 안내', body)
+    assert result['deadline'] is None and result['deadline_text'] is None
+
+
+def test_cache_survives_restart_and_content_changes(tmp_path):
+    fake = FakeLLM()
+    extractor = NoticeExtractor(tmp_path, lambda: fake)
+    first = extractor.extract('안내', '2026년 11월 3일까지 제출')
+    restarted = NoticeExtractor(tmp_path, lambda: fake)
+    assert restarted.extract('안내', '2026년 11월 3일까지 제출') == first
+    assert fake.calls == 1
+    restarted.extract('변경된 안내', '2026년 11월 3일까지 제출')
+    assert fake.calls == 2
+
+
+def test_deadline_can_be_supported_by_title():
+    result = validated_facts(facts(), '신청 마감: 2026년 11월 3일', '신청서를 제출하세요')
+    assert result['deadline'] == '2026-11-03'
+
+
+def test_llm_network_error_returns_null_facts_and_stops_calling(tmp_path, monkeypatch):
+    calls = []
+    class OfflineLLM:
+        def chat(self, system, user):
+            calls.append(user)
+            raise httpx.ConnectError('sensitive upstream details')
+    extractor = NoticeExtractor(tmp_path, OfflineLLM)
+    monkeypatch.setattr(main, 'get_extractor', lambda: extractor)
+    items = [{'id': str(i), 'title': '', 'body': f'공지 {i}'} for i in range(3)]
+    response = TestClient(main.app).post('/notices/extract', json={'items': items})
+    assert response.status_code == 200 and 'sensitive' not in response.text
+    assert all(x['summary'] is None and x['deadline'] is None for x in response.json()['items'])
+    assert len(calls) == 1  # 첫 실패 후 나머지는 LLM을 부르지 않음
+
+
+def test_missing_api_key_returns_null_facts(tmp_path, monkeypatch):
+    def no_key():
+        raise KeyError('LLM_API_KEY')
+    monkeypatch.setattr(main, 'get_extractor', lambda: NoticeExtractor(tmp_path, no_key))
+    response = TestClient(main.app).post('/notices/extract', json={'items': [{'id': '1', 'title': '안내', 'body': '본문'}]})
+    assert response.status_code == 200
+    assert response.json() == {'items': [{'id': '1', 'summary': None, 'deadline': None, 'deadline_text': None, 'action': None}]}
+
+
+def test_extract_api_and_crawler_share_content_cache(tmp_path, monkeypatch):
+    fake = FakeLLM()
+    extractor = NoticeExtractor(tmp_path / 'facts', lambda: fake)
+    crawler = NoticeCrawler(tmp_path / 'notices', httpx.Client(), extractor=extractor)
+    monkeypatch.setattr(main, 'get_extractor', lambda: extractor)
+    crawler.extractor.extract('안내', '2026년 11월 3일까지 제출')
+    payload = {'items': [{'id': 'canvas-123', 'title': '안내', 'body': '2026년 11월 3일까지 제출'}]}
+    client = TestClient(main.app)
+    result = client.post('/notices/extract', json=payload)
+    assert result.status_code == 200
+    assert result.json() == {'items': [{'id': 'canvas-123', 'summary': '장학금 신청 안내', 'deadline': '2026-11-03', 'deadline_text': '2026년 11월 3일', 'action': '신청서를 제출하세요'}]}
+    payload['items'][0]['id'] = 'canvas-other'
+    assert client.post('/notices/extract', json=payload).json()['items'][0]['id'] == 'canvas-other'
+    assert fake.calls == 1
+
+
+def test_extract_batch_limits_and_empty_batch(tmp_path, monkeypatch):
+    fake = FakeLLM()
+    monkeypatch.setattr(main, 'get_extractor', lambda: NoticeExtractor(tmp_path, lambda: fake))
+    client = TestClient(main.app)
+    item = {'id': '1', 'title': '안내', 'body': '본문'}
+    assert client.post('/notices/extract', json={'items': [item] * 30}).status_code == 200
+    assert client.post('/notices/extract', json={'items': [item] * 31}).status_code == 422
+    assert client.post('/notices/extract', json={'items': []}).json() == {'items': []}
+    assert client.post('/notices/extract', json={'items': [{'id': '1'}]}).status_code == 422
+    assert fake.calls == 1
+
+
+@pytest.mark.parametrize('bad_output', ['not JSON', '{}', '{"summary": null}', '[]'])
+def test_bad_llm_output_only_nulls_that_item_and_is_not_cached(tmp_path, monkeypatch, bad_output):
+    class PerItemLLM:
+        calls = 0
+        def chat(self, system, user):
+            PerItemLLM.calls += 1
+            return bad_output if '나쁜' in user else facts()
+    extractor = NoticeExtractor(tmp_path, PerItemLLM)
+    monkeypatch.setattr(main, 'get_extractor', lambda: extractor)
+    client = TestClient(main.app)
+    payload = {'items': [{'id': 'bad', 'title': '나쁜 글', 'body': '본문'},
+                         {'id': 'ok', 'title': '안내', 'body': '2026년 11월 3일까지 제출'}]}
+    items = client.post('/notices/extract', json=payload).json()['items']
+    assert items[0]['summary'] is None and items[1]['deadline'] == '2026-11-03'
+    client.post('/notices/extract', json=payload)
+    assert PerItemLLM.calls == 3  # 실패한 글만 다시 호출
+
+
+@pytest.mark.parametrize(('text', 'llm_deadline', 'posted', 'expected'), [
+    ('11월 3일(화)까지', '2026-11-03', '2026-10-29T10:00:00Z', '2026-11-03'),
+    ('11/3까지', '2025-11-03', '2026-10-29', '2026-11-03'),  # LLM 연도가 틀려도 게시일 기준
+    ('1월 5일까지', '2026-01-05', '2026-10-29', '2027-01-05'),
+    ('10월 20일까지', '2026-10-20', '2026-10-29', '2026-10-20'),
+    ('11월 3일까지', '2026-11-03', None, None),
+    ('11월 4일까지', '2026-11-03', '2026-10-29', None),
+    ('2월 30일까지', '2026-02-30', '2026-01-10', None),
+    ('2025년 11월 3일까지', '2026-11-03', '2026-10-29', None),
+])
+def test_year_inferred_from_posted_date(text, llm_deadline, posted, expected):
+    result = validated_facts(facts(llm_deadline, text), '과제', f'과제는 {text} 제출', posted)
+    assert result['deadline'] == expected
+    assert (result['deadline_text'] is None) == (expected is None)
+
+
+def test_llm_call_does_not_hold_lock(tmp_path):
+    from threading import Event, Thread
+    entered, release = Event(), Event()
+    class SlowLLM:
+        def chat(self, system, user):
+            if '느린' in user:
+                entered.set()
+                assert release.wait(3)
+            return facts()
+    extractor = NoticeExtractor(tmp_path, SlowLLM)
+    worker = Thread(target=extractor.extract, args=('느린 글', '본문'))
+    worker.start()
+    try:
+        assert entered.wait(2)
+        assert extractor.extract('빠른 글', '본문')['summary'] == '장학금 신청 안내'
+    finally:
+        release.set()
+        worker.join(3)

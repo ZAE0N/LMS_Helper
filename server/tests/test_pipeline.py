@@ -113,7 +113,12 @@ def test_issues_reported_when_still_broken(terms):
     assert any("SQL Injection" in i for i in r["issues"])
 
 
-def test_missing_fixed_translation_falls_back_to_bilingual():
+def test_missing_fixed_translation_falls_back_to_bilingual(tmp_path, monkeypatch):
+    (tmp_path / "common.json").write_text(
+        '{"terms": [{"term": "과제", "rule": "fixed", "translations": {"ru": ""}}]}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(service, "GLOSSARY_DIR", tmp_path)
     r = service.translate_pdf(make_pdf("과제는 금요일까지 제출한다."), "ru", None, FakeLLM())
     assert "과제" in r["needs_review"]
     assert "(과제)" in r["pages"][0]["translated"]

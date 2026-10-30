@@ -6,6 +6,10 @@ import argparse
 import json
 from pathlib import Path
 
+from .settings import load_environment
+
+load_environment()
+
 from . import candidates as cand
 from . import service
 from .llm import OpenAICompatible

@@ -46,7 +46,7 @@ LMS 페이지 오른쪽 서랍의 알림 탭: **수업**(LMS 강의 공지) · *
   "id": "canvas-123 | school-4295 | dept-111019",
   "source": "course | school | dept",
   "course": "과목명 또는 null",
-  "title": "제목", "summary": "한 줄 요약", "body": "본문 평문",
+  "title": "제목", "summary": "한 줄 요약 또는 null(추출 실패)", "body": "본문 평문",
   "deadline": "2026-11-03 또는 null",
   "deadline_text": "원문 속 날짜 표현 또는 null",
   "action": "해야 할 일 (한국어) 또는 null",
@@ -56,12 +56,13 @@ LMS 페이지 오른쪽 서랍의 알림 탭: **수업**(LMS 강의 공지) · *
 - `GET /notices?source=school|dept&limit=10&page=1` — 학교·학과 탭용 (`lang` 없음)
   - `limit`: 기본 10, 최대 30 (화면에서 10 / 20 / 30 선택)
   - `page`: "더 보기"용, 1부터
-  - 수집할 때 `summary`·`deadline`·`action`을 함께 추출해 저장
+  - 수집할 때 `summary`·`deadline`·`action`을 함께 추출해 저장. 추출이 실패해도 목록은 그대로 제공 (값만 `null`)
   → `{items: [Notice], page, has_more}` (최신순)
 - `POST /notices/extract` — 수업 탭용. 확장 프로그램이 Canvas에서 읽고 **HTML 태그를 제거한 평문**으로 보냄. 한 번에 최대 30건
-  요청 `{items: [{id, title, body}]}`
+  요청 `{items: [{id, title, body, posted_at}]}` (`posted_at` 선택, 연도 없는 날짜의 연도 계산용)
   → `{items: [{id, summary, deadline, deadline_text, action}]}`
   - `deadline`은 원문에 실제로 있는 날짜일 때만, 없으면 `null`
+  - 일부 글의 추출이 실패해도 요청 전체를 오류로 만들지 않는다. 그 글만 네 값이 모두 `null` (저장하지 않고 다음에 다시 추출)
 - `POST /notices/translate`는 사용하지 않음 (삭제)
 
 ### 챗봇
@@ -116,7 +117,7 @@ LMS 페이지 오른쪽 서랍의 알림 탭: **수업**(LMS 강의 공지) · *
 - 우리가 AI로 번역해 넣은 결과(교안 등)에는 `translate="no"`를 붙여 크롬 번역이 덮어쓰지 않게 한다. 한국어 문구(서랍 등)는 크롬 번역이 번역하도록 그대로 둔다.
 
 ### 학교·학과 공지 수집
-- 같은 게시판 확인은 30분에 한 번, 요청 간격 1초 이상. 새 글만 본문 요청.
+- 같은 게시판 확인은 정상 수집 후 30분에 한 번, 실패 시 5분 후 재시도. 실패 중에도 기존 캐시는 계속 제공. 요청 간격 1초 이상. 새 글만 본문 요청.
 - 시작 전 robots.txt 확인. User-Agent에 프로젝트 이름 표기.
 - 대상 게시판 (두 곳 모두 같은 게시판 시스템, 직접 열어서 동작 확인 후 사용)
   - 학교 공지 목록: `https://www.inhatc.ac.kr/combBbs/kr/2/list.do?page=1`
@@ -126,7 +127,7 @@ LMS 페이지 오른쪽 서랍의 알림 탭: **수업**(LMS 강의 공지) · *
 
 ### 번역
 - AI 번역은 교안에만 쓰고, 반드시 `server/app/translate.py`의 용어집 파이프라인(`translate_text`)을 거친다. 공지는 번역하지 않는다 (한국어 그대로, 크롬 번역 담당).
-- 공지의 마감일·할 일은 한국어로 추출한다. 마감일은 LLM이 뽑은 날짜가 원문에 실제로 있을 때만 채운다. 없으면 `null`.
+- 공지의 마감일·할 일은 한국어로 추출한다. 마감일은 LLM이 뽑은 날짜가 원문에 실제로 있을 때만 채운다. 없으면 `null`. 원문에 월·일만 있으면 연도는 게시일 기준(게시일보다 90일 넘게 이전이면 다음 해).
 - 챗봇·문제는 교안 내용에만 근거하고 출처 페이지를 반드시 붙인다.
 
 ## 5. 코드 작성 규칙
