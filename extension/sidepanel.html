@@ -1,40 +1,45 @@
 <!doctype html>
-<html lang="ko">
+<html lang="en" translate="no">
 <head>
   <meta charset="utf-8">
   <title>LMS Helper</title>
   <link rel="stylesheet" href="sidepanel.css">
 </head>
 <body>
-  <header>
+  <header class="top">
     <h1>LMS Helper</h1>
-    <p class="sub">개발용 진단 화면 (기능 화면은 여기에 추가)</p>
+    <span class="synced" id="synced" hidden data-i18n="synced"></span>
   </header>
 
-  <section>
-    <h2>1. 로그인 세션으로 API 호출</h2>
-    <p>내 정보와 수강 과목을 불러올 수 있는지 확인</p>
-    <button data-check="check-session">확인</button>
-  </section>
+  <p class="guide" data-i18n="guide"></p>
 
-  <section>
-    <h2>2. 교안 파일 다운로드</h2>
-    <p>가장 작은 PDF 1개를 받아 크기만 확인 (외부 전송 없음)</p>
-    <button data-check="check-file">확인</button>
-  </section>
-
-  <section>
-    <h2>깔끔한 테마</h2>
+  <section class="panel open">
+    <h2 data-i18n="settings"></h2>
+    <label class="row">
+      <span data-i18n="language"></span>
+      <select id="lang"></select>
+    </label>
+    <p class="ct-warn" id="ct-warn" hidden data-i18n="ctUnsupported"></p>
     <label class="switch">
       <input type="checkbox" id="theme">
-      <span>LMS 화면 디자인 변경</span>
+      <span data-i18n="theme"></span>
     </label>
-    <p class="hint">퀴즈·시험 페이지에서는 자동으로 꺼집니다</p>
+    <p class="hint" data-i18n="themeHint"></p>
   </section>
 
-  <pre id="out">결과가 여기에 표시됩니다</pre>
+  <details class="panel dev">
+    <summary data-i18n="dev"></summary>
+    <div class="dev-buttons">
+      <button data-check="check-session">세션 API 확인</button>
+      <button data-check="check-file">교안 다운로드 확인</button>
+      <button data-check="get-translate-state">크롬 번역 상태</button>
+      <button data-check="check-translate-block">번역 차단 확인</button>
+    </div>
+    <pre id="out">진단 결과</pre>
+  </details>
 
   <script src="config.js"></script>
+  <script src="i18n.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>
