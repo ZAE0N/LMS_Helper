@@ -6,3 +6,4 @@ pymupdf==2.0
 pytest==9.2.0
 python-dotenv==1.2.1
 beautifulsoup4==4.14.3
+pydantic==2.14.1

@@ -1,5 +1,8 @@
+import asyncio
 import os
 import re
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Literal
 
 from .settings import load_environment
@@ -14,11 +17,23 @@ from . import service
 from .llm import OpenAICompatible
 from .pdf import extract_pages
 from .notices import NoticeError, get_crawler
+from .notice_extract import ExtractRequest, NoticeExtractionError, get_extractor
 
 MAX_PDF = 100 * 1024 * 1024
 COURSE_RE = re.compile(r"^[\w-]{1,64}$")
 
-app = FastAPI(title="LMS Helper Server")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    crawler = get_crawler()
+    crawler.start()
+    try:
+        yield
+    finally:
+        await asyncio.to_thread(crawler.stop)
+
+
+app = FastAPI(title="LMS Helper Server", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o],  # chrome-extension://<ID>
@@ -52,14 +67,21 @@ def health():
 @app.get("/notices")
 def notices(
     source: Literal["school", "dept"],
-    lang: Literal["en", "ru"] = "en",
     limit: int = Query(10, ge=1, le=30),
     page: int = Query(1, ge=1),
 ):
     try:
-        return get_crawler().listing(source, lang, limit, page)
+        return get_crawler().listing(source, limit, page)
     except NoticeError as e:
         raise HTTPException(503, str(e)) from e
+
+
+@app.post("/notices/extract")
+def extract_notices(request: ExtractRequest) -> dict:
+    try:
+        return {"items": get_extractor().extract_items(request.items)}
+    except NoticeExtractionError as e:
+        raise HTTPException(502, str(e)) from e
 
 
 @app.post("/documents")
