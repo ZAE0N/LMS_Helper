@@ -17,7 +17,7 @@ from . import service
 from .llm import OpenAICompatible
 from .pdf import extract_pages
 from .notices import NoticeError, get_crawler
-from .notice_extract import ExtractRequest, NoticeExtractionError, get_extractor
+from .notice_extract import ExtractRequest, get_extractor
 
 MAX_PDF = 100 * 1024 * 1024
 COURSE_RE = re.compile(r"^[\w-]{1,64}$")
@@ -78,10 +78,8 @@ def notices(
 
 @app.post("/notices/extract")
 def extract_notices(request: ExtractRequest) -> dict:
-    try:
-        return {"items": get_extractor().extract_items(request.items)}
-    except NoticeExtractionError as e:
-        raise HTTPException(502, str(e)) from e
+    # 실패한 글은 summary 등이 null (전체를 오류로 만들지 않음)
+    return {"items": get_extractor().extract_items(request.items)}
 
 
 @app.post("/documents")
