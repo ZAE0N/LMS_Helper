@@ -49,19 +49,24 @@ uvicorn app.main:app --port 8000
 | POST | `/documents` | `file`(PDF), `lang`, `course`(선택) | `doc_id`, `pages[] {page, original, translated, terms, issues}`, `issue_pages`, `needs_review` |
 | GET | `/documents/{doc_id}` | | 저장된 결과 |
 | POST | `/glossary/candidates` | `file`, `use_llm` | 검수용 용어 후보 |
-| GET | `/notices` | `source=school 또는 dept`, `lang=en 또는 ru`, `limit=1~30` (기본 10), `page>=1` | `items`, `page`, `has_more` |
+| GET | `/notices` | `source=school 또는 dept`, `limit=1~30` (기본 10), `page>=1` | `items`, `page`, `has_more` |
+| POST | `/notices/extract` | `{items: [{id, title, body}]}` 최대 30건 | `{items: [{id, summary, deadline, deadline_text, action}]}` |
 
-## 공지 수집 (1차 구현)
-- 학교·학과 게시판의 최근 3페이지를 수집. `NOTICE_CRAWL_PAGES` 환경변수로 범위 조절.
-- 페이지 선택은 이 수집 범위 안에서 동작하며 `has_more`는 저장된 목록 기준. 전체 과거 공지 검색은 아직 지원하지 않음.
-- 최초 요청 시 수집하므로 수십 초 걸릴 수 있음. 이후 같은 게시판은 30분간 디스크 캐시 사용.
-- `robots.txt` 확인, `LMS-Helper/0.1` User-Agent, 요청 간격 1초 이상, 기존 글 본문은 재요청하지 않음.
-- 수집 실패·robots 차단 시 HTTP 503 + `detail`. 실패 후에도 30분간 재수집하지 않음.
-- 중복 수집 방지를 위해 서버는 **worker 1개**로 실행. 여러 프로세스·인스턴스 운영은 아직 미지원.
-- 원문 제목·본문은 `data/notices/`에 보관. 원문 링크로 전체 내용을 확인할 수 있음.
-- 번역은 다음 단계: `title_tr`, `summary_tr`, `body_tr`는 빈 문자열, `deadline`, `deadline_text`, `action_tr`는 null. `lang` 검증은 수행하지만 아직 번역에 사용하지 않음.
-- 번역을 추가할 때는 반드시 `translate_text` 용어집 파이프라인을 사용.
-- 확인: `/notices?source=school&lang=ru&limit=10&page=1` 및 `source=dept`.
+## 공지 수집 및 한국어 정보 추출 (v3)
+- API 계약은 `ext/notice-tab`에서 합의한 공지 v3 형식. `lang` 없이 한국어 원문 `title`, `body`와 `summary`, `deadline`, `deadline_text`, `action`을 반환. `*_tr` 필드는 제거.
+- 학교·학과 게시판의 최근 3페이지를 수집. `NOTICE_CRAWL_PAGES`로 범위 조절. `has_more`는 이 수집 범위 기준이며 전체 과거 공지 검색은 아직 미지원.
+- 서버 시작 시 백그라운드 수집을 시작하고 주기적으로 갱신. GET 요청은 수집을 기다리지 않고 저장된 목록을 즉시 반환.
+- 저장된 목록이 아직 없으면 HTTP 503 + `detail`. 최초 수집 완료 후 다시 요청. 정상적으로 수집한 빈 목록은 HTTP 200.
+- 성공 후 30분 간격으로 갱신. 실패 후 5분 간격 재시도. 실패·갱신 중에도 이전에 받은 목록(빈 목록 포함)은 계속 표시.
+- `robots.txt` 확인: 404는 허용, 금지 규칙·서버 오류·통신 오류는 수집 중지. User-Agent `LMS-Helper/0.1`, 사이트 요청 간격 1초 이상.
+- 날짜는 점·하이픈·슬래시 형식을 지원. 잘못된 날짜가 있는 행은 건너뛰어 다른 공지에 영향을 주지 않음.
+- 본문은 새 글만 요청. 요약·마감일·할 일은 공통 추출기로 처리하고 제목+본문의 내용 해시를 키로 저장. 동일 내용은 재시작·다른 ID·다른 API 경로에서도 LLM을 재호출하지 않음. 내용이 바뀌면 다시 추출.
+- 기존 원문 캐시는 재사용하고 아직 없는 추출 정보만 생성. 원문은 `data/notices/`, 추출 캐시는 `data/notice-extractions/`에 저장.
+- LLM 출력은 구조 검증. `deadline_text`가 원문에 실제로 존재하고 그 안의 연·월·일이 `deadline`과 일치할 때만 유지. 연도 없는 날짜·상대 날짜·추측한 날짜는 보수적으로 null 처리.
+- `POST /notices/extract`는 HTML 없는 평문을 받음. 최대 30건, 항목당 title 2,000자·body 100,000자. LLM 호출·출력 오류 시 HTTP 502 + `detail`; 실패한 결과는 캐시하지 않음.
+- LLM은 `.env`의 설정 사용. 서버 시작 시 새 공지가 있으면 추출을 위해 유료 LLM API가 호출될 수 있음. 테스트는 가짜 LLM과 가짜 HTTP만 사용.
+- 중복 수집 방지를 위해 서버 worker는 **1개**로 실행. 여러 프로세스·인스턴스 운영의 공유 잠금은 미지원.
+- 확인: `/notices?source=school&limit=10&page=1` 및 `source=dept`.
 
 ## 주의
 - 로컬 또는 접근이 제한된 환경에서만 실행 (번역된 교안이 외부에 공개되지 않게)

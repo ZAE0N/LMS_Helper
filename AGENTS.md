@@ -34,8 +34,8 @@ LMS 화면 ─ extension/content.js (로그인 세션으로 Canvas API 읽기, �
 - `GET /documents/{doc_id}` → 위와 동일
 - 서버는 PDF의 글자만 사용 (이미지 속 글자는 번역 X, 향후 개선 목록)
 
-### 공지
-사이드 패널 탭: **수업**(LMS 강의 공지) · **학교** · **학과**
+### 공지 (v3: 번역 없음, 한국어 그대로. 번역은 크롬 번역이 담당)
+LMS 페이지 오른쪽 서랍의 알림 탭: **수업**(LMS 강의 공지) · **학교** · **학과**
 
 공통 객체 `Notice`:
 ```json
@@ -43,21 +43,23 @@ LMS 화면 ─ extension/content.js (로그인 세션으로 Canvas API 읽기, �
   "id": "canvas-123 | school-4295 | dept-111019",
   "source": "course | school | dept",
   "course": "과목명 또는 null",
-  "title": "원문 제목", "title_tr": "번역 제목",
-  "summary_tr": "한 줄 요약", "body_tr": "번역 본문",
+  "title": "제목", "summary": "한 줄 요약", "body": "본문 평문",
   "deadline": "2026-11-03 또는 null",
   "deadline_text": "원문 속 날짜 표현 또는 null",
-  "action_tr": "해야 할 일 또는 null",
+  "action": "해야 할 일 (한국어) 또는 null",
   "posted_at": "ISO 8601", "url": "원문 링크"
 }
 ```
-- `POST /notices/translate` — 수업 탭용. 확장 프로그램이 Canvas에서 읽고 **HTML 태그를 제거한 평문**으로 보냄. 한 번에 최대 30건
-  요청 `{lang, items: [{id, source: "course", course, title, body, posted_at, updated_at, url}]}`
-  → `{items: [Notice]}`
-- `GET /notices?source=school|dept&lang=en&limit=10&page=1` — 학교·학과 탭용
+- `GET /notices?source=school|dept&limit=10&page=1` — 학교·학과 탭용 (`lang` 없음)
   - `limit`: 기본 10, 최대 30 (화면에서 10 / 20 / 30 선택)
   - `page`: "더 보기"용, 1부터
+  - 수집할 때 `summary`·`deadline`·`action`을 함께 추출해 저장
   → `{items: [Notice], page, has_more}` (최신순)
+- `POST /notices/extract` — 수업 탭용. 확장 프로그램이 Canvas에서 읽고 **HTML 태그를 제거한 평문**으로 보냄. 한 번에 최대 30건
+  요청 `{items: [{id, title, body}]}`
+  → `{items: [{id, summary, deadline, deadline_text, action}]}`
+  - `deadline`은 원문에 실제로 있는 날짜일 때만, 없으면 `null`
+- `POST /notices/translate`는 사용하지 않음 (삭제)
 
 ### 챗봇
 - 대화 기록은 확장 프로그램이 교안별로 저장 (`summary` + 그 이후 `history`)
@@ -109,7 +111,7 @@ LMS 화면 ─ extension/content.js (로그인 세션으로 Canvas API 읽기, �
 - LMS 화면에 넣는 요소는 버튼 수준으로 최소화하고, 나머지는 사이드 패널에 둔다.
 
 ### 학교·학과 공지 수집
-- 같은 게시판 확인은 30분에 한 번, 요청 간격 1초 이상. 새 글만 본문 요청.
+- 같은 게시판 확인은 정상 수집 후 30분에 한 번, 실패 시 5분 후 재시도. 실패 중에도 기존 캐시는 계속 제공. 요청 간격 1초 이상. 새 글만 본문 요청.
 - 시작 전 robots.txt 확인. User-Agent에 프로젝트 이름 표기.
 - 대상 게시판 (두 곳 모두 같은 게시판 시스템, 직접 열어서 동작 확인 후 사용)
   - 학교 공지 목록: `https://www.inhatc.ac.kr/combBbs/kr/2/list.do?page=1`
@@ -118,8 +120,8 @@ LMS 화면 ─ extension/content.js (로그인 세션으로 Canvas API 읽기, �
   - 원래 주소(사람이 보는 페이지): 학교 `https://www.inhatc.ac.kr/kr/460/subview.do`, 학과 `https://cs.inhatc.ac.kr/cs/1754/subview.do`
 
 ### 번역
-- 교안·공지 번역은 모두 `server/app/translate.py`의 용어집 파이프라인(`translate_text`)을 거친다.
-- 마감일은 LLM이 뽑은 날짜가 원문에 실제로 있을 때만 채운다. 없으면 `null`.
+- AI 번역은 교안에만 쓰고, 반드시 `server/app/translate.py`의 용어집 파이프라인(`translate_text`)을 거친다. 공지는 번역하지 않는다 (한국어 그대로, 크롬 번역 담당).
+- 공지의 마감일·할 일은 한국어로 추출한다. 마감일은 LLM이 뽑은 날짜가 원문에 실제로 있을 때만 채운다. 없으면 `null`.
 - 챗봇·문제는 교안 내용에만 근거하고 출처 페이지를 반드시 붙인다.
 
 ## 5. 코드 작성 규칙
