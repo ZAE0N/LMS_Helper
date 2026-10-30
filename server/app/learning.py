@@ -191,6 +191,32 @@ class LearningStore:
                                    [(quiz_id, q['id'], q['type'], q['page'], int(checked[q['id']])) for q in questions])
             return {'score': score, 'total': total}
 
+    def report_statistics(self, anon_id: str, doc_id: str | None = None) -> dict:
+        conditions = 'q.anon_id = ?' + (' AND q.doc_id = ?' if doc_id else '')
+        params = (anon_id, doc_id) if doc_id else (anon_id,)
+        event_conditions = 'anon_id = ?' + (' AND doc_id = ?' if doc_id else '')
+        with self._connection() as connection:
+            connection.execute('BEGIN')
+            taken, correct, total = connection.execute(f'''SELECT COUNT(*), COALESCE(SUM(r.score), 0), COALESCE(SUM(r.total), 0)
+                FROM quiz_results r JOIN quizzes q ON q.quiz_id = r.quiz_id WHERE {conditions}''', params).fetchone()
+            asked = connection.execute(f'SELECT COUNT(*) FROM question_events WHERE {event_conditions}', params).fetchone()[0]
+            accuracy_by_type = {kind: 0.0 for kind in ('multiple', 'short', 'matching')}
+            answered_by_type = {kind: 0 for kind in accuracy_by_type}
+            for kind, n, right in connection.execute(f'''SELECT a.type, COUNT(*), SUM(a.correct)
+                    FROM quiz_answer_results a JOIN quizzes q ON q.quiz_id = a.quiz_id
+                    WHERE {conditions} GROUP BY a.type''', params):
+                accuracy_by_type[kind] = right / n
+                answered_by_type[kind] = n
+            weak = [{'doc_id': doc, 'page': page, 'wrong': wrong} for doc, page, wrong in connection.execute(f'''
+                SELECT q.doc_id, a.page, COUNT(*) FROM quiz_answer_results a JOIN quizzes q ON q.quiz_id = a.quiz_id
+                WHERE {conditions} AND a.correct = 0 GROUP BY q.doc_id, a.page
+                ORDER BY COUNT(*) DESC, q.doc_id, a.page LIMIT 20''', params)]
+            documents = sorted({row[0] for row in connection.execute(
+                f'SELECT DISTINCT doc_id FROM question_events WHERE {event_conditions}', params)} |
+                {row[0] for row in connection.execute(f'SELECT DISTINCT q.doc_id FROM quizzes q WHERE {conditions}', params)})
+        return {'quizzes_taken': taken, 'accuracy': correct / total if total else 0.0,
+                'accuracy_by_type': accuracy_by_type, 'questions_asked': asked, 'weak_pages': weak,
+                'document_ids': documents, 'answered_by_type': answered_by_type}
 
 
 @lru_cache(maxsize=8)

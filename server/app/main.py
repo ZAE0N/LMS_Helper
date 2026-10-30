@@ -4,6 +4,7 @@ import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Literal
+from uuid import UUID
 
 from .settings import load_environment
 
@@ -18,6 +19,7 @@ from .chat import ChatError, ChatRequest, ChatResponse, DocumentNotFound, answer
 from .learning import LearningStoreError, QuizConflict, QuizForbidden, QuizNotFound, QuizSubmissionError, get_learning_store
 from .grading import GradeError, GradeResponse, GradeShortRequest, QuizResultRequest, ResultResponse, grade_short
 from .quiz import QuizDocumentNotFound, QuizError, QuizInputError, QuizRequest, QuizResponse, generate_quiz
+from .report import ReportDocumentNotFound, ReportError, ReportResponse, get_report_builder
 from .llm import OpenAICompatible
 from .pdf import extract_pages
 from .notices import NoticeError, get_crawler
@@ -178,3 +180,18 @@ def quiz_result(request: QuizResultRequest) -> dict:
         raise HTTPException(409, str(e)) from e
     except LearningStoreError as e:
         raise HTTPException(503, "복습 결과를 저장할 수 없음") from e
+
+
+@app.get("/report", response_model=ReportResponse)
+def report(anon_id: UUID, lang: Literal['en', 'ru'] = 'en',
+           doc_id: str | None = Query(None, pattern=r'^[0-9a-f]{64}$')) -> ReportResponse:
+    try:
+        return get_report_builder(service.DATA_DIR / 'reports').build(str(anon_id), lang, doc_id, get_learning_store(), llm)
+    except ReportDocumentNotFound as e:
+        raise HTTPException(404, "문서 없음") from e
+    except ReportError as e:
+        raise HTTPException(502, str(e)) from e
+    except LearningStoreError as e:
+        raise HTTPException(503, "학습 기록을 읽을 수 없음") from e
+    except (OSError, ValueError) as e:
+        raise HTTPException(503, "리포트 데이터를 읽거나 저장할 수 없음") from e
