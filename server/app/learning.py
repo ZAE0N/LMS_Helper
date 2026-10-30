@@ -14,12 +14,20 @@ class LearningStoreError(Exception):
     pass
 
 
+class QuizNotFound(Exception):
+    pass
 
 
+class QuizForbidden(Exception):
+    pass
 
 
+class QuizConflict(Exception):
+    pass
 
 
+class QuizSubmissionError(Exception):
+    pass
 
 
 class LearningStore:
@@ -47,6 +55,31 @@ class LearningStore:
                         questions_json TEXT NOT NULL
                     );
                     CREATE INDEX IF NOT EXISTS quizzes_anon_doc ON quizzes (anon_id, doc_id);
+                    CREATE TABLE IF NOT EXISTS short_grades (
+                        quiz_id TEXT NOT NULL REFERENCES quizzes(quiz_id),
+                        question_id TEXT NOT NULL,
+                        answer_hash TEXT NOT NULL,
+                        lang TEXT NOT NULL,
+                        score INTEGER NOT NULL CHECK (score BETWEEN 0 AND 100),
+                        is_correct INTEGER NOT NULL CHECK (is_correct IN (0, 1)),
+                        reason_tr TEXT NOT NULL,
+                        graded_at TEXT NOT NULL,
+                        PRIMARY KEY (quiz_id, question_id)
+                    );
+                    CREATE TABLE IF NOT EXISTS quiz_results (
+                        quiz_id TEXT PRIMARY KEY REFERENCES quizzes(quiz_id),
+                        score INTEGER NOT NULL CHECK (score >= 0),
+                        total INTEGER NOT NULL CHECK (total > 0 AND score <= total),
+                        submitted_at TEXT NOT NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS quiz_answer_results (
+                        quiz_id TEXT NOT NULL REFERENCES quiz_results(quiz_id),
+                        question_id TEXT NOT NULL,
+                        type TEXT NOT NULL CHECK (type IN ('multiple', 'short', 'matching')),
+                        page INTEGER NOT NULL CHECK (page > 0),
+                        correct INTEGER NOT NULL CHECK (correct IN (0, 1)),
+                        PRIMARY KEY (quiz_id, question_id)
+                    );
                 ''')
         except OSError as e:
             raise LearningStoreError('학습 기록 저장소를 열 수 없음') from e
@@ -93,9 +126,70 @@ class LearningStore:
             record['questions'] = json.loads(record.pop('questions_json'))
             return record
 
+    def get_short_grade(self, quiz_id: str, question_id: str) -> dict | None:
+        with self._connection() as connection:
+            connection.row_factory = sqlite3.Row
+            row = connection.execute('SELECT * FROM short_grades WHERE quiz_id = ? AND question_id = ?',
+                                     (quiz_id, question_id)).fetchone()
+            return dict(row) if row is not None else None
 
+    def get_quiz_result(self, quiz_id: str) -> dict | None:
+        with self._connection() as connection:
+            row = connection.execute('SELECT score, total FROM quiz_results WHERE quiz_id = ?', (quiz_id,)).fetchone()
+            return {'score': row[0], 'total': row[1]} if row is not None else None
 
+    def save_short_grade(self, quiz_id: str, question_id: str, answer_hash: str, lang: str,
+                         score: int, is_correct: bool, reason_tr: str) -> dict:
+        with self._connection() as connection:
+            connection.execute('BEGIN IMMEDIATE')
+            if connection.execute('SELECT 1 FROM quiz_results WHERE quiz_id = ?', (quiz_id,)).fetchone():
+                raise QuizConflict('이미 제출한 시험의 답변은 변경할 수 없음')
+            connection.execute('''INSERT INTO short_grades
+                (quiz_id, question_id, answer_hash, lang, score, is_correct, reason_tr, graded_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (quiz_id, question_id) DO UPDATE SET answer_hash=excluded.answer_hash,
+                lang=excluded.lang, score=excluded.score, is_correct=excluded.is_correct,
+                reason_tr=excluded.reason_tr, graded_at=excluded.graded_at''',
+                (quiz_id, question_id, answer_hash, lang, score, int(is_correct), reason_tr,
+                 datetime.now(timezone.utc).isoformat()))
+        return {'score': score, 'is_correct': is_correct, 'reason_tr': reason_tr}
 
+    def submit_quiz_result(self, quiz_id: str, anon_id: str, answers: dict[str, bool]) -> dict:
+        with self._connection() as connection:
+            connection.execute('BEGIN IMMEDIATE')
+            connection.row_factory = sqlite3.Row
+            quiz = connection.execute('SELECT * FROM quizzes WHERE quiz_id = ?', (quiz_id,)).fetchone()
+            if quiz is None:
+                raise QuizNotFound('복습 문제 없음')
+            if quiz['anon_id'] != anon_id:
+                raise QuizForbidden('다른 사용자의 복습 문제')
+            questions = json.loads(quiz['questions_json'])
+            if set(answers) != {q['id'] for q in questions}:
+                raise QuizSubmissionError('모든 문제에 대해 한 번씩 결과를 보내야 함')
+            grades = {row['question_id']: bool(row['is_correct']) for row in connection.execute(
+                'SELECT question_id, is_correct FROM short_grades WHERE quiz_id = ?', (quiz_id,))}
+            checked = {}
+            for question in questions:
+                qid = question['id']
+                if question['type'] == 'short':
+                    if qid not in grades:
+                        raise QuizSubmissionError('주관식 답변을 먼저 채점해야 함')
+                    checked[qid] = grades[qid]
+                else:
+                    checked[qid] = answers[qid]
+            previous = connection.execute('SELECT score, total FROM quiz_results WHERE quiz_id = ?', (quiz_id,)).fetchone()
+            if previous is not None:
+                stored = {row['question_id']: bool(row['correct']) for row in connection.execute(
+                    'SELECT question_id, correct FROM quiz_answer_results WHERE quiz_id = ?', (quiz_id,))}
+                if stored != checked:
+                    raise QuizConflict('이미 제출한 결과와 다름. 새 복습 문제를 생성하세요.')
+                return {'score': previous['score'], 'total': previous['total']}
+            score, total = sum(checked.values()), len(questions)
+            connection.execute('INSERT INTO quiz_results (quiz_id, score, total, submitted_at) VALUES (?, ?, ?, ?)',
+                               (quiz_id, score, total, datetime.now(timezone.utc).isoformat()))
+            connection.executemany('INSERT INTO quiz_answer_results (quiz_id, question_id, type, page, correct) VALUES (?, ?, ?, ?, ?)',
+                                   [(quiz_id, q['id'], q['type'], q['page'], int(checked[q['id']])) for q in questions])
+            return {'score': score, 'total': total}
 
 
 

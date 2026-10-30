@@ -15,7 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import candidates as cand
 from . import service
 from .chat import ChatError, ChatRequest, ChatResponse, DocumentNotFound, answer_chat
-from .learning import LearningStoreError, get_learning_store
+from .learning import LearningStoreError, QuizConflict, QuizForbidden, QuizNotFound, QuizSubmissionError, get_learning_store
+from .grading import GradeError, GradeResponse, GradeShortRequest, QuizResultRequest, ResultResponse, grade_short
 from .quiz import QuizDocumentNotFound, QuizError, QuizInputError, QuizRequest, QuizResponse, generate_quiz
 from .llm import OpenAICompatible
 from .pdf import extract_pages
@@ -144,3 +145,36 @@ def quiz(request: QuizRequest) -> QuizResponse:
         raise HTTPException(502, str(e)) from e
     except LearningStoreError as e:
         raise HTTPException(503, "복습 문제를 저장할 수 없음. 잠시 후 다시 시도하세요.") from e
+
+
+@app.post("/quiz/grade-short", response_model=GradeResponse)
+def grade_short_answer(request: GradeShortRequest) -> GradeResponse:
+    try:
+        return grade_short(request, get_learning_store(), llm)
+    except QuizNotFound as e:
+        raise HTTPException(404, str(e)) from e
+    except QuizSubmissionError as e:
+        raise HTTPException(400, str(e)) from e
+    except QuizConflict as e:
+        raise HTTPException(409, str(e)) from e
+    except GradeError as e:
+        raise HTTPException(502, str(e)) from e
+    except LearningStoreError as e:
+        raise HTTPException(503, "채점 결과를 저장할 수 없음") from e
+
+
+@app.post("/quiz/result", response_model=ResultResponse)
+def quiz_result(request: QuizResultRequest) -> dict:
+    try:
+        return get_learning_store().submit_quiz_result(str(request.quiz_id), str(request.anon_id),
+                                                       {str(answer.id): answer.correct for answer in request.answers})
+    except QuizNotFound as e:
+        raise HTTPException(404, str(e)) from e
+    except QuizForbidden as e:
+        raise HTTPException(403, str(e)) from e
+    except QuizSubmissionError as e:
+        raise HTTPException(400, str(e)) from e
+    except QuizConflict as e:
+        raise HTTPException(409, str(e)) from e
+    except LearningStoreError as e:
+        raise HTTPException(503, "복습 결과를 저장할 수 없음") from e
