@@ -1,4 +1,5 @@
 """Local learning events and generated quizzes; chat text remains on the client."""
+import json
 import sqlite3
 from contextlib import closing, contextmanager
 from datetime import datetime, timezone
@@ -37,6 +38,15 @@ class LearningStore:
                     );
                     CREATE INDEX IF NOT EXISTS question_events_anon_doc
                         ON question_events (anon_id, doc_id);
+                    CREATE TABLE IF NOT EXISTS quizzes (
+                        quiz_id TEXT PRIMARY KEY,
+                        anon_id TEXT NOT NULL,
+                        doc_id TEXT NOT NULL,
+                        lang TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        questions_json TEXT NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS quizzes_anon_doc ON quizzes (anon_id, doc_id);
                 ''')
         except OSError as e:
             raise LearningStoreError('학습 기록 저장소를 열 수 없음') from e
@@ -66,7 +76,22 @@ class LearningStore:
                 row = connection.execute('SELECT COUNT(*) FROM question_events WHERE anon_id = ? AND doc_id = ?', (anon_id, doc_id)).fetchone()
             return row[0]
 
+    def save_quiz(self, quiz_id: str, anon_id: str, doc_id: str, lang: str, questions: list[dict]) -> None:
+        with self._connection() as connection:
+            connection.execute(
+                'INSERT INTO quizzes (quiz_id, anon_id, doc_id, lang, created_at, questions_json) VALUES (?, ?, ?, ?, ?, ?)',
+                (quiz_id, anon_id, doc_id, lang, datetime.now(timezone.utc).isoformat(), json.dumps(questions, ensure_ascii=False)),
+            )
 
+    def get_quiz(self, quiz_id: str) -> dict | None:
+        with self._connection() as connection:
+            connection.row_factory = sqlite3.Row
+            row = connection.execute('SELECT * FROM quizzes WHERE quiz_id = ?', (quiz_id,)).fetchone()
+            if row is None:
+                return None
+            record = dict(row)
+            record['questions'] = json.loads(record.pop('questions_json'))
+            return record
 
 
 

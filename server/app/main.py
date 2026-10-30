@@ -16,6 +16,7 @@ from . import candidates as cand
 from . import service
 from .chat import ChatError, ChatRequest, ChatResponse, DocumentNotFound, answer_chat
 from .learning import LearningStoreError, get_learning_store
+from .quiz import QuizDocumentNotFound, QuizError, QuizInputError, QuizRequest, QuizResponse, generate_quiz
 from .llm import OpenAICompatible
 from .pdf import extract_pages
 from .notices import NoticeError, get_crawler
@@ -125,3 +126,21 @@ async def glossary_candidates(file: UploadFile = File(...), use_llm: bool = Form
     if use_llm:
         lists.insert(0, cand.llm_candidates(pages, llm()))
     return {"terms": cand.merge(*lists)}
+
+
+@app.post("/quiz", response_model=QuizResponse)
+def quiz(request: QuizRequest) -> QuizResponse:
+    try:
+        store = get_learning_store()
+        response = generate_quiz(request, llm)
+        store.save_quiz(str(response.quiz_id), str(request.anon_id), request.doc_id, request.lang,
+                        [q.model_dump(mode='json') for q in response.questions])
+        return response
+    except QuizDocumentNotFound as e:
+        raise HTTPException(404, "문서 없음") from e
+    except QuizInputError as e:
+        raise HTTPException(400, str(e)) from e
+    except QuizError as e:
+        raise HTTPException(502, str(e)) from e
+    except LearningStoreError as e:
+        raise HTTPException(503, "복습 문제를 저장할 수 없음. 잠시 후 다시 시도하세요.") from e
