@@ -103,7 +103,7 @@ const App = (() => {
     const name = meta.name || params.get('name') || 'document.pdf';
     const glossary = CONFIG.GLOSSARY[params.get('courseName')] || null;
     const doc = await Api.translateDocument(blob, name, lang, glossary).catch(e => {
-      throw new UserError(e instanceof TypeError ? t.errServer : `${t.errServer} (${e.message})`);
+      throw new UserError(e instanceof TypeError ? t.errServer : `${t.errServerFail} (${e.message})`); // TypeError = 연결 자체 실패
     });
     await store.set({
       [key]: { doc_id: doc.doc_id, updated_at: meta.updated_at },

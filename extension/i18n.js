@@ -23,6 +23,7 @@ const I18N = {
     errTooBig: 'The file is larger than 100 MB.',
     errNotPdf: 'This file is not a PDF.',
     errServer: "Couldn't reach the server. Is it running?",
+    errServerFail: 'The server returned an error.',
     retry: 'Try again',
     // 뷰어
     page: 'Page',
@@ -100,6 +101,7 @@ const I18N = {
     errTooBig: 'Файл больше 100 МБ.',
     errNotPdf: 'Это не PDF-файл.',
     errServer: 'Нет связи с сервером. Он запущен?',
+    errServerFail: 'Сервер вернул ошибку.',
     retry: 'Повторить',
     page: 'Стр.',
     pages: 'Страницы',

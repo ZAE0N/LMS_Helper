@@ -29,7 +29,7 @@
       if (mode === 'review') await QuizView.render(doc);
       else DocView.render(doc);
     } catch (e) {
-      App.status(e instanceof App.UserError ? e.message : `${t.errServer} (${e.message})`, { error: true, retry: open });
+      App.status(e instanceof App.UserError ? e.message : e instanceof TypeError ? t.errServer : `${t.errServerFail} (${e.message})`, { error: true, retry: open });
     }
   }
   open();

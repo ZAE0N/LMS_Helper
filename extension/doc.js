@@ -2,6 +2,8 @@
 const DocView = (() => {
   const { h } = App;
   const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // PDF 글머리표(사용자 정의 문자 U+E000~F8FF)는 글꼴이 없어 □로 보이므로 •로 표시
+  const clean = s => (s || '').replace(/[\uE000-\uF8FF]/g, '• ');
 
   // 원문에서 용어집 용어를 <mark>로 표시
   function highlighted(text, terms) {
@@ -42,9 +44,9 @@ const DocView = (() => {
       issue.hidden = !p.issues?.length;
       const empty = !(p.original || '').trim();
       const tr = h('article', { class: 'col' }, h('h3', {}, t.translated),
-        empty ? h('p', { class: 'muted' }, t.noText) : Object.assign(h('div', { class: 'text' }), { textContent: p.translated }));
+        empty ? h('p', { class: 'muted' }, t.noText) : Object.assign(h('div', { class: 'text' }), { textContent: clean(p.translated) }));
       const or = h('article', { class: 'col original', lang: 'ko' }, h('h3', {}, t.original),
-        empty ? h('p', { class: 'muted' }, t.noText) : highlighted(p.original, p.terms || []));
+        empty ? h('p', { class: 'muted' }, t.noText) : highlighted(clean(p.original), p.terms || []));
       cols.className = `cols ${mode}`;
       cols.replaceChildren(...(mode === 'side' ? [tr, or] : mode === 'tr' ? [tr] : [or]));
       termBox.replaceChildren(...(p.terms?.length ? [h('span', { class: 'muted' }, `${t.terms}:`), ...p.terms.map(x => h('span', { class: 'term' }, x))] : []));
