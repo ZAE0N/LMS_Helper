@@ -113,6 +113,63 @@ def test_issues_reported_when_still_broken(terms):
     assert any("SQL Injection" in i for i in r["issues"])
 
 
+@pytest.mark.parametrize(('lang', 'wrong', 'expected'), [
+    ('en', 'Inha University', 'Inha Technical College'),
+    ('ru', 'Инха технологический университет', 'Технический Колледж Инха'),
+])
+def test_college_name_is_fixed_and_incorrect_name_triggers_retry(terms, lang, wrong, expected):
+    class Responses:
+        def __init__(self):
+            self.calls = []
+
+        def chat(self, system, user):
+            self.calls.append(user)
+            return wrong if len(self.calls) == 1 else expected
+
+    llm = Responses()
+    result = translate_text('인하공업전문대학', lang, terms, llm)
+    assert result == {'translated': expected, 'terms': ['인하공업전문대학'], 'issues': []}
+    assert len(llm.calls) == 2 and expected in llm.calls[1]
+
+
+def test_college_glossary_update_does_not_reuse_old_document_cache(tmp_path, monkeypatch):
+    import json
+    source = service.GLOSSARY_DIR / 'common.json'
+    updated = json.loads(source.read_text(encoding='utf-8'))
+    old = {**updated, 'terms': [t for t in updated['terms'] if t['term'] != '인하공업전문대학']}
+    glossary_dir = tmp_path / 'glossary'
+    glossary_dir.mkdir()
+    common = glossary_dir / 'common.json'
+    common.write_text(json.dumps(old, ensure_ascii=False), encoding='utf-8')
+    monkeypatch.setattr(service, 'GLOSSARY_DIR', glossary_dir)
+    pdf = make_pdf('인하공업전문대학')
+    model = FakeLLM()
+    before = service.translate_pdf(pdf, 'ru', None, model)
+    calls = model.calls
+    common.write_text(json.dumps(updated, ensure_ascii=False), encoding='utf-8')
+    after = service.translate_pdf(pdf, 'ru', None, model)
+    assert before['doc_id'] != after['doc_id'] and model.calls == calls + 1
+    assert after['pages'][0]['translated'] == 'Технический Колледж Инха'
+    assert service.translate_pdf(pdf, 'ru', None, model) == after
+    assert model.calls == calls + 1
+
+
+def test_college_name_matches_glued_department_without_loosening_other_terms(terms):
+    text = '인하공업전문대학컴퓨터정보공학과'
+    assert '인하공업전문대학' in {t.term for t in g.find(text, terms)}
+    result = translate_text(text, 'ru', terms, FakeLLM())
+    assert 'Технический Колледж Инха' in result['translated']
+    assert result['issues'] == []
+    assert '인가' not in {t.term for t in g.find('이것은 무엇인가', terms)}
+
+
+def test_invalid_glossary_match_policy_is_rejected(tmp_path):
+    path = tmp_path / 'bad.json'
+    path.write_text('{"terms":[{"term":"name","rule":"fixed","match":"unknown"}]}')
+    with pytest.raises(ValueError):
+        g.load([path])
+
+
 def test_missing_fixed_translation_falls_back_to_bilingual(tmp_path, monkeypatch):
     (tmp_path / "common.json").write_text(
         '{"terms": [{"term": "과제", "rule": "fixed", "translations": {"ru": ""}}]}',

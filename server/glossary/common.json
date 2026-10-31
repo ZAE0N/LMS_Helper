@@ -1,6 +1,7 @@
 {
   "description": "학사·과제 공통 용어. translations에 언어 코드(en, ru)별 번역어를 채우면 됨",
   "terms": [
+    {"term": "인하공업전문대학", "rule": "fixed", "match": "substring", "translations": {"en": "Inha Technical College", "ru": "Технический Колледж Инха"}, "note": "사용자 합의 표기. 대소문자 유지. PDF에서 학과명과 붙어 나와도 인식"},
     {"term": "과제", "rule": "fixed", "translations": {"en": "assignment", "ru": "задание"}, "note": ""},
     {"term": "출석", "rule": "fixed", "translations": {"en": "attendance", "ru": "посещаемость"}, "note": ""},
     {"term": "학점", "rule": "fixed", "translations": {"en": "credit", "ru": "кредит"}, "note": ""},
