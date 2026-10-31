@@ -14,6 +14,7 @@ from .translate import LANGS, Cache, glossary_version, translate_page
 ROOT = Path(__file__).resolve().parent.parent
 GLOSSARY_DIR = Path(os.getenv("GLOSSARY_DIR", ROOT / "glossary"))
 DATA_DIR = Path(os.getenv("DATA_DIR", ROOT / "data"))
+STRUCTURE_VERSION = "blocks-v2"  # 교재 보기 형식을 바꾸면 올려서 교안을 새로 만들게 함
 _DOCUMENT_LOCKS = [Lock() for _ in range(64)]
 _PAGE_LOCKS = [Lock() for _ in range(64)]
 
@@ -42,7 +43,7 @@ def translate_pdf(data: bytes, lang: str, course: str | None, llm: LLM, *, worke
 
     extracted = analyze_pdf(data)
     # 바이트가 아니라 내용 기준 (같은 교안을 다시 내보내도 재사용)
-    doc_id = Cache.key(*(p["text"] for p in extracted), lang, gver)
+    doc_id = Cache.key(*(p["text"] for p in extracted), lang, gver, STRUCTURE_VERSION)
 
     def process_page(p: dict) -> dict:
         blocks = copy.deepcopy(p.get("blocks"))
