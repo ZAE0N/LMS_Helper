@@ -33,10 +33,15 @@ LMS 페이지 ─ extension/content.js  (로그인 세션으로 Canvas API 읽�
 
 ### 교안
 - `POST /documents` — multipart: `file`(PDF, **업로드 1회 최대 100MB**), `lang`, `course`(선택, 용어집 파일명)
-  → `{doc_id, lang, course, needs_review[], issue_pages[], pages: [{page, original, translated, terms[], issues[]}]}`
+  → `{doc_id, lang, course, needs_review[], issue_pages[], pages: [{page, original, translated, terms[], issues[], blocks[]}]}`
+  - `original`은 띄어쓰기를 되살린 페이지 글 (챗봇·복습에 사용)
+  - `blocks` (교재 보기): `[{type: heading|bullet|text|code|image, level: 0~3, text, translated, image, rect}]`
+    - 글 덩어리는 페이지마다 한 번에 용어집 파이프라인으로 번역. 덩어리별로 맞지 않으면 그 페이지의 `translated`가 모두 null → 확장은 페이지 전체 번역으로 표시
+    - 주소·숫자만 있는 줄은 원문, 코드는 `translated: null`(원문 표시), 그림·도표는 `image` 파일 이름 (그림 안 글자는 번역 X)
 - `GET /documents/{doc_id}` → 위와 동일
+- `GET /documents/{doc_id}/figures/{image}` → 그림·도표 PNG
 - `GET /documents/{doc_id}/pdf` → 모양을 유지한 번역 PDF (베타, `application/pdf`). 아직 만드는 중이면 `202 {"status": "processing"}`, 기능 꺼짐 503, 원본 없음 404
-  - 교안마다 한 번만 만들어 저장하고 모두 같은 파일을 받는다 (매번 다시 번역하지 않음)
+  - 처음 요청할 때 만들기 시작하고, 교안마다 한 번만 만들어 저장해 모두 같은 파일을 받는다 (매번 다시 번역하지 않음)
 - 서버는 PDF의 글자만 사용 (이미지 속 글자는 번역 X, 향후 개선 목록)
 
 ### 공지 (v3: 번역 없음, 한국어 그대로. 번역은 크롬 번역이 담당)
