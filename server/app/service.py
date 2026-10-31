@@ -1,3 +1,5 @@
+import copy
+import hashlib
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -5,7 +7,8 @@ from threading import Lock
 
 from . import glossary as g
 from .llm import LLM
-from .structure import MARK, analyze_pdf, marked_text, render_figure, split_marked
+from .figure_vision import read_figure
+from .structure import MARK, analyze_pdf, apply_marked, marked_text, render_figure
 from .translate import LANGS, Cache, glossary_version, translate_page
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -40,12 +43,10 @@ def translate_pdf(data: bytes, lang: str, course: str | None, llm: LLM, *, worke
     extracted = analyze_pdf(data)
     # 바이트가 아니라 내용 기준 (같은 교안을 다시 내보내도 재사용)
     doc_id = Cache.key(*(p["text"] for p in extracted), lang, gver)
-    save_figures(doc_id, data, extracted)
 
     def process_page(p: dict) -> dict:
-        blocks = p.get("blocks")
-        source = marked_text(blocks) if blocks else ""
-        source = source or p["text"]
+        blocks = copy.deepcopy(p.get("blocks"))
+        source = (marked_text(blocks) if blocks else "") or p["text"]
         k = Cache.key(source, lang, gver)
         with _PAGE_LOCKS[int(k[:8], 16) % len(_PAGE_LOCKS)]:
             if (r := pages_cache.get(k)) is None:
@@ -53,11 +54,13 @@ def translate_pdf(data: bytes, lang: str, course: str | None, llm: LLM, *, worke
                 pages_cache.put(k, r)
         page = {"page": p["page"], "original": p["text"], **r}
         if blocks is not None:
-            parts = split_marked(r["translated"], blocks) if source != p["text"] else None
+            # 덩어리별 번역이 어긋나면 블록의 translated는 없음 → 확장이 페이지 전체 번역으로 보여 줌
+            if source == p["text"] or not apply_marked(r["translated"], blocks):
+                for b in blocks:
+                    b.pop("translated", None)
             page["translated"] = MARK.sub("", r["translated"]).replace("\n\n", "\n").strip()
-            # 덩어리별 번역이 어긋나면 그 페이지는 확장이 페이지 전체 번역으로 보여 줌
-            page["blocks"] = [{**b, "translated": parts[i] if parts else None} if b["type"] != "image"
-                              else b for i, b in enumerate(blocks)]
+            save_figures(doc_id, data, p["page"], blocks, lang, llm)
+            page["blocks"] = blocks
         return page
 
     with _DOCUMENT_LOCKS[int(doc_id[:8], 16) % len(_DOCUMENT_LOCKS)]:
@@ -94,18 +97,38 @@ def figures_dir(doc_id: str) -> Path:
     return DATA_DIR / "figures" / doc_id
 
 
-def save_figures(doc_id: str, data: bytes, pages: list[dict]) -> None:
-    """그림·도표 영역을 잘라 PNG로 저장하고 블록에 파일 이름(image)을 붙임"""
+def _write(path: Path, content: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_bytes(content)
+    temporary.replace(path)
+
+
+def save_figures(doc_id: str, data: bytes, page: int, blocks: list[dict], lang: str, llm: LLM) -> None:
+    """그림 영역을 PNG로 저장(image). 번역본(translated_image): 도형 그림은 글자를 번역해 다시 그리고,
+    통째로 붙인 그림은 GPT가 다시 그린 SVG 또는 그림 속 글자 번역 목록(legend)"""
     folder = figures_dir(doc_id)
-    for p in pages:
-        for k, b in enumerate(x for x in p.get("blocks", []) if x["type"] == "image"):
-            b["image"] = f"{p['page']}-{k + 1}.png"
-            path = folder / b["image"]
-            if not path.exists():
-                folder.mkdir(parents=True, exist_ok=True)
-                temporary = path.with_suffix(".tmp")
-                temporary.write_bytes(render_figure(data, p["page"], b["rect"]))
-                temporary.replace(path)
+    for k, b in enumerate((x for x in blocks if x["type"] == "image"), 1):
+        base = f"{page}-{k}"
+        b["image"] = f"{base}.png"
+        if not (folder / b["image"]).exists():
+            _write(folder / b["image"], render_figure(data, page, b["rect"]))
+        if any(label.get("translated") not in (None, label["text"]) for label in b["labels"]):
+            b["translated_image"] = f"{base}.tr.png"
+            if not (folder / b["translated_image"]).exists():
+                _write(folder / b["translated_image"], render_figure(data, page, b["rect"], b["labels"]))
+        elif b.get("raster") and hasattr(llm, "vision"):
+            png = (folder / b["image"]).read_bytes()
+            vision = Cache(DATA_DIR / "vision")
+            key = Cache.key(hashlib.sha256(png).hexdigest(), lang, "figure-v1")
+            if (result := vision.get(key)) is None:
+                x0, y0, x1, y1 = b["rect"]
+                result = read_figure(llm, png, LANGS[lang], round(x1 - x0), round(y1 - y0))
+                vision.put(key, result)
+            if result["svg"]:
+                b["translated_image"] = f"{base}.tr.svg"
+                _write(folder / b["translated_image"], result["svg"].encode("utf-8"))
+            b["legend"] = result["labels"]
 
 
 def get_document(doc_id: str) -> dict | None:
