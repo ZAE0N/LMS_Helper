@@ -1,6 +1,8 @@
 import hashlib
 import json
 import re
+import threading
+import time
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -90,6 +92,16 @@ def translate_page(text: str, lang: str, terms_all: list[g.Term], llm: LLM) -> d
     }
 
 
+# 같은 캐시 파일은 한 번에 한 스레드만 읽고 씀 (Windows는 사용 중인 파일을 덮어쓰지 못함)
+_locks: dict[Path, threading.Lock] = {}
+_locks_guard = threading.Lock()
+
+
+def _lock(path: Path) -> threading.Lock:
+    with _locks_guard:
+        return _locks.setdefault(path, threading.Lock())
+
+
 class Cache:
     """같은 텍스트·언어·용어집이면 재사용 (교안은 여러 학생이 공유)"""
 
@@ -103,15 +115,25 @@ class Cache:
 
     def get(self, k: str):
         p = self.root / f"{k}.json"
-        return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
+        with _lock(p):
+            return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
     def put(self, k: str, v) -> None:
+        target = self.root / f'{k}.json'
         temporary = None
         try:
             with NamedTemporaryFile(mode='w', encoding='utf-8', dir=self.root, suffix='.tmp', delete=False) as stream:
                 temporary = Path(stream.name)
                 json.dump(v, stream, ensure_ascii=False)
-            temporary.replace(self.root / f'{k}.json')
+            with _lock(target):
+                for attempt in range(5):
+                    try:
+                        temporary.replace(target)
+                        break
+                    except PermissionError:  # 백신 등 다른 프로그램이 잠깐 파일을 잡은 경우
+                        if attempt == 4:
+                            raise
+                        time.sleep(0.05 * (attempt + 1))
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
