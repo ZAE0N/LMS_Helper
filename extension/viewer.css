@@ -124,3 +124,15 @@ mark { background: #fff3c4; border-radius: 3px; padding: 0 1px; }
 .cols.pdf { display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
 .pdf-frame { flex: 1; width: 100%; min-height: 0; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
 .cols.pdf .status { margin: 60px auto; }
+
+/* 교재 보기: 제목 · 글머리표(단계) · 문장 · 코드 · 그림 */
+.book { display: flex; flex-direction: column; gap: 6px; }
+.book h2 { font-size: 20px; color: #1d4ed8; border-bottom: 2px solid var(--accent-soft); padding-bottom: 6px; margin: 0 0 6px; }
+.book .bullet, .book .text { margin: 2px 0; }
+.book .bullet { padding-left: 16px; position: relative; }
+.book .bullet::before { content: '•'; color: var(--accent); position: absolute; left: 2px; }
+.book .l1 { margin-left: 22px; } .book .l2 { margin-left: 44px; } .book .l3 { margin-left: 66px; }
+.book .code { background: #f6f8fa; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin: 4px 0;
+  font: 12.5px/1.5 Consolas, "D2Coding", monospace; white-space: pre-wrap; word-break: break-word; }
+.book .fig { display: block; margin: 8px auto; border-radius: 6px; border: 1px solid var(--line); background: #fff; }
+.cols.side .book .fig { max-width: 100%; }

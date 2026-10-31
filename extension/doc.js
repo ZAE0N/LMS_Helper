@@ -6,11 +6,34 @@ const DocView = (() => {
   const clean = s => (s || '').replace(/[\uE000-\uF8FF]/g, '• ');
 
   // 원문에서 용어집 용어를 <mark>로 표시
-  function highlighted(text, terms) {
-    const box = h('div', { class: 'text' });
+  function highlighted(text, terms, box = h('div', { class: 'text' })) {
     if (!terms.length) return (box.textContent = text), box;
     const re = new RegExp(`(${[...terms].sort((a, b) => b.length - a.length).map(escapeRe).join('|')})`, 'g');
     text.split(re).forEach((part, i) => box.append(i % 2 ? h('mark', {}, part) : part));
+    return box;
+  }
+
+  // 교재 보기: 서버가 나눈 덩어리(제목·글머리표·문장·코드·그림)를 정리해서 표시.
+  // 번역이 덩어리별로 맞지 않은 페이지는 null → 페이지 전체 번역으로 대체
+  function book(doc, p, field) {
+    const blocks = p.blocks || [];
+    const words = blocks.filter(b => b.type !== 'image');
+    if (!blocks.length || (field === 'translated' && words.some(b => b.type !== 'code' && !b.translated))) return null;
+    const box = h('div', { class: 'book' });
+    for (const b of blocks) {
+      if (b.type === 'image') {
+        const width = Math.round((b.rect[2] - b.rect[0]) * 1.3);
+        box.append(h('img', { class: 'fig', alt: '', loading: 'lazy', style: `width:min(100%, ${width}px)`,
+          src: `${CONFIG.SERVER_URL}/documents/${doc.doc_id}/figures/${b.image}` }));
+        continue;
+      }
+      const text = clean(field === 'translated' ? b.translated ?? b.text : b.text);
+      if (b.type === 'code') box.append(h('pre', { class: 'code', lang: 'en' }, b.text));
+      else {
+        const el = h(b.type === 'heading' ? 'h2' : 'div', { class: `${b.type} l${b.level || 0}` });
+        box.append(field === 'translated' ? Object.assign(el, { textContent: text }) : highlighted(text, p.terms || [], el));
+      }
+    }
     return box;
   }
 
@@ -19,7 +42,7 @@ const DocView = (() => {
     const app = document.getElementById('app');
     const pages = doc.pages;
     let current = 0;
-    let mode = 'side';
+    let mode = pages.some(p => p.blocks?.length) ? 'tr' : 'side';
 
     const list = h('nav', { class: 'pages', 'aria-label': t.pages },
       pages.map((p, i) => h('button', { type: 'button', class: 'pg', 'data-i': i, onclick: () => go(i) },
@@ -93,10 +116,13 @@ const DocView = (() => {
       issue.hidden = !p.issues?.length;
       if (mode === 'pdf') return paintPdf(p);
       const empty = !(p.original || '').trim();
+      const figures = p.blocks?.some(b => b.type === 'image');
       const tr = h('article', { class: 'col' }, h('h3', {}, t.translated),
-        empty ? h('p', { class: 'muted' }, t.noText) : Object.assign(h('div', { class: 'text' }), { textContent: clean(p.translated) }));
+        empty && !figures ? h('p', { class: 'muted' }, t.noText)
+          : book(doc, p, 'translated') || Object.assign(h('div', { class: 'text' }), { textContent: clean(p.translated) }));
       const or = h('article', { class: 'col original', lang: 'ko' }, h('h3', {}, t.original),
-        empty ? h('p', { class: 'muted' }, t.noText) : highlighted(clean(p.original), p.terms || []));
+        empty && !figures ? h('p', { class: 'muted' }, t.noText)
+          : book(doc, p, 'text') || highlighted(clean(p.original), p.terms || []));
       cols.className = `cols ${mode}`;
       cols.replaceChildren(...(mode === 'side' ? [tr, or] : mode === 'tr' ? [tr] : [or]));
       termBox.replaceChildren(...(p.terms?.length ? [h('span', { class: 'muted' }, `${t.terms}:`), ...p.terms.map(x => h('span', { class: 'term' }, x))] : []));
