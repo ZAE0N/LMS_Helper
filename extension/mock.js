@@ -1,4 +1,4 @@
-// CONFIG.USE_MOCK 일 때만 사용. AGENTS.md 3장 Notice 형식과 같아야 함 (한국어, 번역은 크롬이 함)
+// CONFIG.MOCK_API.notices 일 때만 사용. AGENTS.md 3장 Notice 형식과 같아야 함 (한국어, 번역은 크롬이 함)
 const MOCK = (() => {
   const day = 86400000;
   const iso = offset => new Date(Date.now() + offset * day).toISOString();

@@ -28,7 +28,8 @@
     start: '복습 시작',
     lastResult: '최근 결과',
     weak: '약한 부분',
-    noRecord: '아직 복습 기록이 없습니다'
+    noRecord: '아직 복습 기록이 없습니다',
+    report: '학습 리포트 보기'
   };
   const FILE_CACHE_MS = 10 * 60 * 1000;
 
@@ -48,9 +49,9 @@
     return r.data;
   });
   const Api = {
-    getNotices: q => (CONFIG.USE_MOCK ? Promise.resolve(MOCK.notices(q)) : bg({ type: 'api', path: `/notices?${new URLSearchParams(q)}` })),
+    getNotices: q => (CONFIG.MOCK_API.notices ? Promise.resolve(MOCK.notices(q)) : bg({ type: 'api', path: `/notices?${new URLSearchParams(q)}` })),
     extract: items =>
-      CONFIG.USE_MOCK ? Promise.resolve(MOCK.extract({ items })) : bg({ type: 'api', method: 'POST', path: '/notices/extract', body: { items } })
+      CONFIG.MOCK_API.notices ? Promise.resolve(MOCK.extract({ items })) : bg({ type: 'api', method: 'POST', path: '/notices/extract', body: { items } })
   };
   const openPage = page => chrome.runtime.sendMessage({ type: 'open-page', page });
   const store = {
@@ -154,15 +155,16 @@
       const todo = raw.items.filter(it => !cached[key(it)]);
       if (todo.length) {
         // 추출 실패(서버 꺼짐·미구현)해도 공지는 그대로 보여줌
-        const items = await Api.extract(todo.map(({ id, title, body }) => ({ id, title, body })))
+        const items = await Api.extract(todo.map(({ id, title, body, posted_at }) => ({ id, title, body, posted_at })))
           .then(r => r.items || [], () => []);
         const fresh = {};
         items.forEach(x => {
           const src = todo.find(t => t.id === x.id);
-          if (src) fresh[key(src)] = x;
+          if (!src) return;
+          cached[key(src)] = x;
+          if (x.summary) fresh[key(src)] = x; // 추출 실패(null)는 저장 안 함 → 다음에 다시 시도
         });
-        Object.assign(cached, fresh);
-        if (!CONFIG.USE_MOCK) store.set(fresh);
+        if (!CONFIG.MOCK_API.notices) store.set(fresh);
       }
       return {
         items: raw.items.map(it => ({ ...it, summary: null, deadline: null, deadline_text: null, action: null, ...(cached[key(it)] || {}), id: it.id })),
@@ -197,7 +199,7 @@
 
     const el = h('div', { class: 'lmsh-tab' },
       h('div', { class: 'lmsh-toolbar' }, h('div', { class: 'lmsh-seg' }, seg), limit,
-        CONFIG.USE_MOCK ? h('span', { class: 'lmsh-sample' }, KO.sample) : null),
+        CONFIG.MOCK_API.notices ? h('span', { class: 'lmsh-sample' }, KO.sample) : null),
       list, status, more);
     return { el, start: () => load(true) };
   }
@@ -274,7 +276,8 @@
     const el = h('div', { class: 'lmsh-tab' },
       h('label', { class: 'lmsh-label' }, KO.reviewFor), select,
       h('div', { class: 'lmsh-chips' }, chips, count),
-      go, record);
+      go, record,
+      h('button', { type: 'button', class: 'lmsh-btn ghost wide', onclick: () => openPage('viewer.html?mode=report') }, KO.report));
     return { el, start, preselect: f => { wanted = f; if (files.length) select.value = String(f.id); } };
   }
 
