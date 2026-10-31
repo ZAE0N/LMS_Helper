@@ -35,6 +35,8 @@ LMS 페이지 ─ extension/content.js  (로그인 세션으로 Canvas API 읽�
 - `POST /documents` — multipart: `file`(PDF, **업로드 1회 최대 100MB**), `lang`, `course`(선택, 용어집 파일명)
   → `{doc_id, lang, course, needs_review[], issue_pages[], pages: [{page, original, translated, terms[], issues[]}]}`
 - `GET /documents/{doc_id}` → 위와 동일
+- `GET /documents/{doc_id}/pdf` → 모양을 유지한 번역 PDF (베타, `application/pdf`). 아직 만드는 중이면 `202 {"status": "processing"}`, 기능 꺼짐 503, 원본 없음 404
+  - 교안마다 한 번만 만들어 저장하고 모두 같은 파일을 받는다 (매번 다시 번역하지 않음)
 - 서버는 PDF의 글자만 사용 (이미지 속 글자는 번역 X, 향후 개선 목록)
 
 ### 공지 (v3: 번역 없음, 한국어 그대로. 번역은 크롬 번역이 담당)
