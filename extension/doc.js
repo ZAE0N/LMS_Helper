@@ -103,12 +103,12 @@ const DocView = (() => {
       box.scrollTop = box.scrollHeight;
       try {
         const res = await Api.chat({ anon_id: App.anonId, doc_id: doc.doc_id, lang: App.lang, question, summary: state.summary, history: state.history }, doc);
-        // 서버가 압축했으면: 요약 교체, 보낸 history는 최근 kept개만 남김
+        // 이번 질문·답을 먼저 붙이고, 서버가 압축했으면 요약 교체 + 최근 kept개만 남김 (server/README.md 순서)
+        state.history.push({ role: 'user', content: question }, { role: 'assistant', content: res.answer });
         if (res.summary != null) {
           state.summary = res.summary;
           state.history = state.history.slice(-(res.kept ?? 8));
         }
-        state.history.push({ role: 'user', content: question }, { role: 'assistant', content: res.answer });
         state.log.push({ role: 'assistant', content: res.answer, citations: res.citations || [] });
       } catch (e) {
         state.log.push({ role: 'error', content: `${t.chatError} (${e.message})` });
