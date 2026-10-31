@@ -13,6 +13,7 @@ load_environment()
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 
 from . import candidates as cand
 from . import service
@@ -22,6 +23,7 @@ from .learning import LearningStoreError, QuizConflict, QuizForbidden, QuizNotFo
 from .grading import GradeError, GradeResponse, GradeShortRequest, QuizResultRequest, ResultResponse, grade_short
 from .quiz import QuizDocumentNotFound, QuizError, QuizInputError, QuizRequest, QuizResponse, generate_quiz
 from .report import ReportDocumentNotFound, ReportError, ReportResponse, get_report_builder
+from .layout_pdf import get_layout, save_original
 from .pdf import extract_pages
 from .notices import NoticeError, get_crawler
 from .notice_extract import ExtractRequest, get_extractor
@@ -95,7 +97,11 @@ async def translate_document(file: UploadFile = File(...), lang: str = Form(...)
         raise HTTPException(400, "course 형식 오류")
     try:
         data = await read_pdf(file)
-        return await asyncio.to_thread(service.translate_pdf, data, lang, course, llm())
+        result = await asyncio.to_thread(service.translate_pdf, data, lang, course, llm())
+        # PDF 보기(베타)용: 원본을 보관하고 미리 만들기 시작 (기능이 꺼져 있으면 아무것도 안 함)
+        await asyncio.to_thread(save_original, result['doc_id'], data)
+        get_layout().request(result['doc_id'])
+        return result
     except (ValueError, FileNotFoundError) as e:
         raise HTTPException(400, str(e))
     except httpx.HTTPError as e:
@@ -107,6 +113,22 @@ def get_document(doc_id: str):
     if not re.fullmatch(r"[0-9a-f]{64}", doc_id) or (doc := service.get_document(doc_id)) is None:
         raise HTTPException(404, "문서 없음")
     return doc
+
+
+@app.get("/documents/{doc_id}/pdf")
+def get_layout_pdf(doc_id: str):
+    if not re.fullmatch(r"[0-9a-f]{64}", doc_id):
+        raise HTTPException(404, "문서 없음")
+    state, value = get_layout().request(doc_id)
+    if state == 'ready':
+        return FileResponse(value, media_type='application/pdf')
+    if state == 'processing':
+        return JSONResponse({'status': 'processing'}, status_code=202)
+    if state == 'disabled':
+        raise HTTPException(503, "PDF 보기 기능이 꺼져 있음 (PDF2ZH_BIN 미설정)")
+    if state == 'missing':
+        raise HTTPException(404, "원본 PDF 없음. 교안을 다시 열어 주세요")
+    raise HTTPException(502, value)
 
 
 @app.post("/chat", response_model=ChatResponse)

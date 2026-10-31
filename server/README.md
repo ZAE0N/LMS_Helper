@@ -51,6 +51,7 @@ uvicorn app.main:app --port 8000
 |---|---|---|---|
 | POST | `/documents` | `file`(PDF), `lang`, `course`(선택) | `doc_id`, `pages[] {page, original, translated, terms, issues}`, `issue_pages`, `needs_review` |
 | GET | `/documents/{doc_id}` | | 저장된 결과 |
+| GET | `/documents/{doc_id}/pdf` | | 모양 유지 번역 PDF (준비 중이면 202 `{status: processing}`) |
 | POST | `/glossary/candidates` | `file`, `use_llm` | 검수용 용어 후보 |
 | GET | `/notices` | `source=school 또는 dept`, `limit=1~30` (기본 10), `page>=1` | `items`, `page`, `has_more` |
 | POST | `/notices/extract` | `{items: [{id, title, body, posted_at?}]}` 최대 30건 | `{items: [{id, summary, deadline, deadline_text, action}]}` |
@@ -177,3 +178,17 @@ Swagger `/docs`에서 `POST /chat` 예시 (`doc_id`를 `/documents` 응답의 �
 - 로컬 또는 접근이 제한된 환경에서만 실행 (번역된 교안이 외부에 공개되지 않게)
 - `.env`와 `data/`는 커밋하지 않음
 - 교안 서명 다운로드 URL은 서버로 보내지 말고 파일 내용만 전송
+
+## PDF 보기 (베타, 모양 유지 번역)
+- [pdf2zh_next](https://github.com/PDFMathTranslate/PDFMathTranslate)(BabelDOC, AGPL-3.0)를 **별도 가상환경**에 설치하고 외부 프로그램으로 실행. 서버와 PyMuPDF 버전이 달라 같은 환경에 넣으면 안 됨
+  ```
+  python -m venv C:\dev\pdftest
+  C:\dev\pdftest\Scripts\activate
+  pip install pdf2zh-next "bitstring>=4.3,<5"
+  ```
+  `.env`에 `PDF2ZH_BIN=C:\dev\pdftest\Scripts\pdf2zh_next.exe` (비우면 기능 꺼짐, `/documents/{id}/pdf`는 503)
+- `/documents` 요청 때 원본을 `data/originals/`에 보관하고 PDF 만들기를 바로 시작. 결과는 `data/layout/{doc_id}.v1.pdf`
+- 교안(doc_id)마다 **한 번만** 만들어 모든 학생이 같은 파일을 받음 → 결과가 매번 같고 토큰도 한 번만 사용. 옵션을 바꾸면 `layout_pdf.VERSION`을 올림
+- 한 번에 하나씩 처리(메모리 2GB 이상 사용). 10쪽 약 1분. 실패하면 10분 동안 다시 시도하지 않음
+- 제목 그림자처럼 글자를 감싸는 작은 그림은 번역 전에 지움 (번역문과 겹치지 않게). 과목 용어집은 CSV로 바꿔 전달
+- 이 기능 이전에 번역한 교안은 원본이 없으므로 확장에서 교안을 한 번 다시 열어야 함 (404)
