@@ -14,7 +14,7 @@ from app.translate import Cache
 def pages(tmp_path, monkeypatch):
     monkeypatch.setattr(service, 'DATA_DIR', tmp_path)
     data = [{'page': i + 1, 'text': f'페이지 내용 {i}'} for i in range(5)]
-    monkeypatch.setattr(service, 'extract_pages', lambda _: data)
+    monkeypatch.setattr(service, 'analyze_pdf', lambda _: data)
     return data
 
 

@@ -113,7 +113,7 @@ def test_disabled_missing_and_invalid(setup, monkeypatch, tmp_path):
     assert fake.calls == []
 
 
-def test_documents_upload_keeps_original_and_starts_pdf(setup, monkeypatch, tmp_path):
+def test_documents_upload_keeps_original_without_starting_pdf(setup, monkeypatch, tmp_path):
     client, layout, fake, _ = setup
     new_id = 'd' * 64
     def translated(data, lang, course, llm):
@@ -126,7 +126,7 @@ def test_documents_upload_keeps_original_and_starts_pdf(setup, monkeypatch, tmp_
     assert response.status_code == 200
     assert (service.DATA_DIR / 'originals' / f'{new_id}.pdf').read_bytes() == pdf
     wait(layout)
-    assert len(fake.calls) == 1
+    assert fake.calls == []  # PDF 보기를 누를 때만 만듦
 
 
 def test_glossary_csv_follows_rules(tmp_path):

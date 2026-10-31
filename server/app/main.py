@@ -98,9 +98,8 @@ async def translate_document(file: UploadFile = File(...), lang: str = Form(...)
     try:
         data = await read_pdf(file)
         result = await asyncio.to_thread(service.translate_pdf, data, lang, course, llm())
-        # PDF 보기(베타)용: 원본을 보관하고 미리 만들기 시작 (기능이 꺼져 있으면 아무것도 안 함)
+        # PDF 보기(베타)용 원본 보관. 실제 PDF는 학생이 PDF 보기를 눌렀을 때만 만듦 (느리고 메모리를 많이 씀)
         await asyncio.to_thread(save_original, result['doc_id'], data)
-        get_layout().request(result['doc_id'])
         return result
     except (ValueError, FileNotFoundError) as e:
         raise HTTPException(400, str(e))
@@ -113,6 +112,14 @@ def get_document(doc_id: str):
     if not re.fullmatch(r"[0-9a-f]{64}", doc_id) or (doc := service.get_document(doc_id)) is None:
         raise HTTPException(404, "문서 없음")
     return doc
+
+
+@app.get("/documents/{doc_id}/figures/{name}")
+def get_figure(doc_id: str, name: str):
+    path = service.figures_dir(doc_id) / name
+    if not re.fullmatch(r"[0-9a-f]{64}", doc_id) or not re.fullmatch(r"\d+-\d+\.png", name) or not path.exists():
+        raise HTTPException(404, "그림 없음")
+    return FileResponse(path, media_type='image/png', headers={'Cache-Control': 'max-age=86400'})
 
 
 @app.get("/documents/{doc_id}/pdf")

@@ -31,6 +31,7 @@ Rules:
 1. Keep every placeholder like ⟦C1⟧ exactly once, unchanged, in place.
 2. Follow the glossary exactly (KEEP / FIXED / BILINGUAL).
 3. Keep line breaks and list structure. Do not add explanations.
+   A paragraph that starts with a marker like ⟦B3⟧ must keep that marker unchanged at its start.
 4. Output only the translation."""
 
 USER = """Glossary:

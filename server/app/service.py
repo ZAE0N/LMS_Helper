@@ -5,7 +5,7 @@ from threading import Lock
 
 from . import glossary as g
 from .llm import LLM
-from .pdf import extract_pages
+from .structure import MARK, analyze_pdf, marked_text, render_figure, split_marked
 from .translate import LANGS, Cache, glossary_version, translate_page
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -37,16 +37,28 @@ def translate_pdf(data: bytes, lang: str, course: str | None, llm: LLM, *, worke
     docs = Cache(DATA_DIR / "docs")
     pages_cache = Cache(DATA_DIR / "pages")
 
-    extracted = extract_pages(data)
+    extracted = analyze_pdf(data)
     # 바이트가 아니라 내용 기준 (같은 교안을 다시 내보내도 재사용)
     doc_id = Cache.key(*(p["text"] for p in extracted), lang, gver)
+    save_figures(doc_id, data, extracted)
+
     def process_page(p: dict) -> dict:
-        k = Cache.key(p["text"], lang, gver)
+        blocks = p.get("blocks")
+        source = marked_text(blocks) if blocks else ""
+        source = source or p["text"]
+        k = Cache.key(source, lang, gver)
         with _PAGE_LOCKS[int(k[:8], 16) % len(_PAGE_LOCKS)]:
             if (r := pages_cache.get(k)) is None:
-                r = translate_page(p["text"], lang, terms, llm)
+                r = translate_page(source, lang, terms, llm)
                 pages_cache.put(k, r)
-        return {"page": p["page"], "original": p["text"], **r}
+        page = {"page": p["page"], "original": p["text"], **r}
+        if blocks is not None:
+            parts = split_marked(r["translated"], blocks) if source != p["text"] else None
+            page["translated"] = MARK.sub("", r["translated"]).replace("\n\n", "\n").strip()
+            # 덩어리별 번역이 어긋나면 그 페이지는 확장이 페이지 전체 번역으로 보여 줌
+            page["blocks"] = [{**b, "translated": parts[i] if parts else None} if b["type"] != "image"
+                              else b for i, b in enumerate(blocks)]
+        return page
 
     with _DOCUMENT_LOCKS[int(doc_id[:8], 16) % len(_DOCUMENT_LOCKS)]:
         if (hit := docs.get(doc_id)) is not None:
@@ -76,6 +88,24 @@ def translate_pdf(data: bytes, lang: str, course: str | None, llm: LLM, *, worke
         }
         docs.put(doc_id, result)
         return result
+
+
+def figures_dir(doc_id: str) -> Path:
+    return DATA_DIR / "figures" / doc_id
+
+
+def save_figures(doc_id: str, data: bytes, pages: list[dict]) -> None:
+    """그림·도표 영역을 잘라 PNG로 저장하고 블록에 파일 이름(image)을 붙임"""
+    folder = figures_dir(doc_id)
+    for p in pages:
+        for k, b in enumerate(x for x in p.get("blocks", []) if x["type"] == "image"):
+            b["image"] = f"{p['page']}-{k + 1}.png"
+            path = folder / b["image"]
+            if not path.exists():
+                folder.mkdir(parents=True, exist_ok=True)
+                temporary = path.with_suffix(".tmp")
+                temporary.write_bytes(render_figure(data, p["page"], b["rect"]))
+                temporary.replace(path)
 
 
 def get_document(doc_id: str) -> dict | None:

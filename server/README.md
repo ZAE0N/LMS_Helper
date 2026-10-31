@@ -51,6 +51,7 @@ uvicorn app.main:app --port 8000
 |---|---|---|---|
 | POST | `/documents` | `file`(PDF), `lang`, `course`(선택) | `doc_id`, `pages[] {page, original, translated, terms, issues}`, `issue_pages`, `needs_review` |
 | GET | `/documents/{doc_id}` | | 저장된 결과 |
+| GET | `/documents/{doc_id}/figures/{image}` | | 교재 보기용 그림·도표 PNG |
 | GET | `/documents/{doc_id}/pdf` | | 모양 유지 번역 PDF (준비 중이면 202 `{status: processing}`) |
 | POST | `/glossary/candidates` | `file`, `use_llm` | 검수용 용어 후보 |
 | GET | `/notices` | `source=school 또는 dept`, `limit=1~30` (기본 10), `page>=1` | `items`, `page`, `has_more` |
@@ -187,8 +188,14 @@ Swagger `/docs`에서 `POST /chat` 예시 (`doc_id`를 `/documents` 응답의 �
   pip install pdf2zh-next "bitstring>=4.3,<5"
   ```
   `.env`에 `PDF2ZH_BIN=C:\dev\pdftest\Scripts\pdf2zh_next.exe` (비우면 기능 꺼짐, `/documents/{id}/pdf`는 503)
-- `/documents` 요청 때 원본을 `data/originals/`에 보관하고 PDF 만들기를 바로 시작. 결과는 `data/layout/{doc_id}.v1.pdf`
+- `/documents` 요청 때 원본을 `data/originals/`에 보관. PDF는 `/documents/{id}/pdf`를 처음 요청할 때 만들기 시작. 결과는 `data/layout/{doc_id}.v1.pdf`
 - 교안(doc_id)마다 **한 번만** 만들어 모든 학생이 같은 파일을 받음 → 결과가 매번 같고 토큰도 한 번만 사용. 옵션을 바꾸면 `layout_pdf.VERSION`을 올림
 - 한 번에 하나씩 처리(메모리 2GB 이상 사용). 10쪽 약 1분. 실패하면 10분 동안 다시 시도하지 않음
 - 제목 그림자처럼 글자를 감싸는 작은 그림은 번역 전에 지움 (번역문과 겹치지 않게). 과목 용어집은 CSV로 바꿔 전달
 - 이 기능 이전에 번역한 교안은 원본이 없으므로 확장에서 교안을 한 번 다시 열어야 함 (404)
+
+## 교재 보기 (구조 추출, `app/structure.py`)
+- 페이지를 제목 · 글머리표(단계 0~3) · 문장 · 코드 · 그림으로 나눔. 글자 간격으로 빠진 띄어쓰기를 되살림 (한글 PDF)
+- 그림과 도형 묶음(다이어그램)은 영역을 잘라 `data/figures/{doc_id}/`에 PNG로 저장. 제목 그림자처럼 글자를 감싸는 작은 그림, 머리·꼬리 장식은 제외
+- 글 덩어리는 `⟦B번호⟧` 표시를 붙여 페이지마다 한 번에 번역하고 다시 나눔. 표시가 어긋나면 그 페이지는 전체 번역으로 대체
+- 이 변경으로 추출 글이 바뀌어 기존 번역 캐시(`doc_id`)는 새로 번역됨 (교안마다 한 번)
