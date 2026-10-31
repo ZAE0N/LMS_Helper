@@ -2,25 +2,29 @@
 <html lang="en" translate="no">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>LMS Helper</title>
-  <style>
-    body { margin: 0; font: 14px/1.5 "Segoe UI", "Malgun Gothic", system-ui, sans-serif; background: #f5f6f8; color: #1d2433; }
-    main { max-width: 860px; margin: 40px auto; background: #fff; border: 1px solid #e4e7ec; border-radius: 14px; padding: 24px 28px; }
-    h1 { font-size: 18px; margin: 0 0 4px; }
-    .sub { color: #667085; margin: 0 0 18px; }
-    .box { background: #eaf1ff; border-radius: 10px; padding: 14px 16px; }
-    .chips { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
-    .chip { font-size: 12px; border: 1px solid #2f6fed; color: #2f6fed; border-radius: 999px; padding: 1px 9px; }
-  </style>
+  <link rel="stylesheet" href="viewer.css">
 </head>
 <body>
-  <main>
-    <h1 id="title"></h1>
-    <p class="sub" id="sub"></p>
-    <div class="box"><p id="msg" style="margin:0"></p><div class="chips" id="chips"></div></div>
-  </main>
+  <header class="bar">
+    <strong class="brand">LMS Helper</strong>
+    <div class="titles">
+      <h1 id="title"></h1>
+      <p id="sub"></p>
+    </div>
+    <span class="demo" id="demo" hidden></span>
+    <span class="lang" id="lang"></span>
+  </header>
+  <main id="app"></main>
   <script src="config.js"></script>
   <script src="i18n.js"></script>
+  <script src="fake.js"></script>
+  <script src="api.js"></script>
   <script src="viewer.js"></script>
+  <script src="doc.js"></script>
+  <script src="quiz.js"></script>
+  <script src="report.js"></script>
+  <script src="main.js"></script>
 </body>
 </html>

@@ -204,8 +204,32 @@ async function checkTranslateBlock() {
   };
 }
 
+// 뷰어(확장 화면)가 교안을 직접 못 받을 때: 이 탭에서 받아 1MB 조각(base64)으로 넘김
+const fileBlobs = new Map();
+async function fileMeta({ course, file }) {
+  const f = await canvasGet(`/api/v1/courses/${course}/files/${file}`);
+  return { name: f.display_name, size: f.size, updated_at: f.updated_at || f.created_at || '' };
+}
+async function readFile({ course, file, offset = 0, size = 1 << 20 }) {
+  const k = `${course}/${file}`;
+  if (!fileBlobs.has(k)) {
+    const f = await canvasGet(`/api/v1/courses/${course}/files/${file}`);
+    const r = await fetch(f.url, { credentials: 'same-origin' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    fileBlobs.set(k, await r.blob());
+  }
+  const blob = fileBlobs.get(k);
+  const buf = new Uint8Array(await blob.slice(offset, offset + size).arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+  if (offset + size >= blob.size) fileBlobs.delete(k);
+  return { total: blob.size, data: btoa(bin) };
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   const fn = {
+    'file-meta': fileMeta,
+    'read-file': readFile,
     'check-translate-block': checkTranslateBlock,
     'check-session': checkSession,
     'check-file': checkFile,

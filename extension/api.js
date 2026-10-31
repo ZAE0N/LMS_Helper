@@ -9,5 +9,24 @@ const Api = (() => {
     if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
     return data;
   }
-  return { request };
+  const post = (path, body) => request(path, { method: 'POST', body: JSON.stringify(body) });
+  const mock = CONFIG.MOCK_API;
+
+  return {
+    request,
+    translateDocument(blob, name, lang, course) {
+      const fd = new FormData();
+      fd.append('file', blob, name || 'document.pdf');
+      fd.append('lang', lang);
+      if (course) fd.append('course', course);
+      return request('/documents', { method: 'POST', body: fd });
+    },
+    getDocument: id => request(`/documents/${id}`),
+    // doc은 가짜 응답을 만들 때만 사용 (서버로는 보내지 않음)
+    chat: (body, doc) => (mock.chat ? FAKE.chat(body, doc) : post('/chat', body)),
+    quiz: (body, doc) => (mock.quiz ? FAKE.quiz(body, doc) : post('/quiz', body)),
+    gradeShort: body => (mock.quiz ? FAKE.gradeShort(body) : post('/quiz/grade-short', body)),
+    quizResult: body => (mock.quiz ? FAKE.quizResult(body) : post('/quiz/result', body)),
+    report: q => (mock.report ? FAKE.report(q) : request(`/report?${new URLSearchParams(q)}`))
+  };
 })();
