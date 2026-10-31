@@ -9,6 +9,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, model_validator
 
 from . import service
+from .grounding import locate
 from .llm import LLM
 
 QuizType = Literal['multiple', 'short', 'matching']
@@ -177,55 +178,71 @@ def source_pages(document: dict, request: QuizRequest) -> list[dict]:
     return sources
 
 
-def validate_questions(raw: str, request: QuizRequest, sources: list[dict]) -> list[Question]:
+QUESTION = TypeAdapter(Question)
+
+
+def validate_questions(raw: str, request: QuizRequest, sources: list[dict]) -> tuple[list[Question], list[str]]:
+    """문제마다 따로 검사해서 통과한 문제와 오류 목록을 돌려줌 (하나가 틀려도 나머지는 살림)"""
     raw = raw.strip()
     if raw.startswith('```'):
         raw = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw)
     parsed = json.loads(raw)
     if not isinstance(parsed, dict) or not isinstance(parsed.get('questions'), list):
         raise ValueError('questions 배열 필요')
-    items = parsed['questions']
-    if len(items) != request.count:
-        raise ValueError('요청한 문제 수와 다름')
-    prepared, errors = [], []
-    for index, item in enumerate(items, 1):
+    texts = [(source['page'], source.get(kind, '')) for source in sources for kind in ('original', 'translated')]
+    valid, errors, seen = [], [], set()
+    for index, item in enumerate(parsed['questions'], 1):
         if not isinstance(item, dict):
-            raise ValueError(f'Question {index}: a JSON object is required')
+            errors.append(f'Question {index}: a JSON object is required')
+            continue
         item = item.copy()
+        problems = []
         evidence = item.pop('evidence', None)
         evidence = [evidence] if isinstance(evidence, str) else evidence
-        page = item.get('page')
         if not isinstance(evidence, list) or not 1 <= len(evidence) <= 8:
-            errors.append(f'Question {index}: evidence is REQUIRED as an array of 1..8 verbatim quotes')
+            problems.append(f'Question {index}: evidence is REQUIRED as an array of 1..8 verbatim quotes')
         else:
+            pages = []
             for value in evidence:
                 if not isinstance(value, str) or not 1 <= len(value.strip()) <= 1200:
-                    errors.append(f'Question {index}: each evidence entry must be a nonempty string of at most 1200 characters')
+                    problems.append(f'Question {index}: each evidence entry must be a nonempty string of at most 1200 characters')
                     continue
-                quote = ' '.join(value.split())
-                if not any(page == source['page'] and any(
-                    quote in ' '.join(source.get(kind, '').split()) for kind in ('original', 'translated')
-                ) for source in sources):
-                    errors.append(f'Question {index}: evidence must be copied exactly from the provided excerpt. Use separate array entries for separate bullet points, without adding commas.')
+                found = locate(value, texts, item.get('page'))
+                if found is None:
+                    problems.append(f'Question {index}: evidence must be copied exactly from the provided excerpt. Use separate array entries for separate bullet points, without adding commas.')
+                pages.append(found)
+            if not problems and item.get('page') not in pages:
+                item['page'] = pages[0]  # 근거가 실제로 있는 페이지로 고침
         item['id'] = str(uuid4())
-        prepared.append(item)
-    try:
-        questions = QUESTIONS.validate_python(prepared)
-    except ValidationError as e:
-        questions = []
-        for error in e.errors(include_input=False, include_url=False):
-            location = '.'.join(str(part) for part in error['loc'])
-            errors.append(f"questions.{location}: {error['msg']}")
-    if errors:
-        raise ValueError('\n'.join(errors[:20]))
-    actual = {q.type for q in questions}
-    if not actual <= set(request.types):
-        raise ValueError('선택하지 않은 문제 유형')
-    if request.count >= len(request.types) and actual != set(request.types):
-        raise ValueError('선택한 문제 유형 누락')
-    if len({q.question.casefold() for q in questions}) != len(questions):
-        raise ValueError('문제 질문 중복')
-    return questions
+        try:
+            question = QUESTION.validate_python(item)
+        except ValidationError as e:
+            question = None
+            for error in e.errors(include_input=False, include_url=False):
+                location = '.'.join(str(part) for part in error['loc'])
+                problems.append(f"questions.{index - 1}.{location}: {error['msg']}")
+        if question is not None and question.type not in request.types:
+            problems.append(f'Question {index}: type {question.type} was not requested')
+        if question is not None and question.question.casefold() in seen:
+            problems.append(f'Question {index}: duplicate question')
+        if problems:
+            errors.extend(problems)
+            continue
+        seen.add(question.question.casefold())
+        valid.append(question)
+    return valid, errors
+
+
+def select_questions(pool: list[Question], request: QuizRequest) -> list[Question]:
+    """선택한 유형을 하나씩 먼저 넣고 나머지를 순서대로 채움"""
+    chosen = []
+    if request.count >= len(request.types):
+        for kind in request.types:
+            first = next((q for q in pool if q.type == kind and q not in chosen), None)
+            if first is not None:
+                chosen.append(first)
+    chosen += [q for q in pool if q not in chosen][:request.count - len(chosen)]
+    return sorted(chosen, key=pool.index)
 
 
 def generate_quiz(request: QuizRequest, llm_factory: Callable[[], LLM]) -> QuizResponse:
@@ -239,6 +256,7 @@ def generate_quiz(request: QuizRequest, llm_factory: Callable[[], LLM]) -> QuizR
         model = llm_factory()
     except (KeyError, ValueError) as e:
         raise QuizError('문제 생성 모델을 사용할 수 없음') from e
+    pool: list[Question] = []
     for attempt in range(2):
         try:
             current_system = system
@@ -248,10 +266,18 @@ def generate_quiz(request: QuizRequest, llm_factory: Callable[[], LLM]) -> QuizR
         except (httpx.HTTPError, KeyError, ValueError) as e:
             raise QuizError('문제를 생성할 수 없음. 잠시 후 다시 시도하세요.') from e
         try:
-            questions = validate_questions(raw, request, sources)
-            return QuizResponse(quiz_id=uuid4(), questions=questions)
+            valid, errors = validate_questions(raw, request, sources)
         except ValueError as e:
-            if attempt == 1:
-                raise QuizError('문제 형식 또는 교안 근거 검증 실패') from None
-            payload = {**payload, 'retry': f'Previous output failed validation: {str(e)[:1500]}. Correct the output and copy evidence exactly from the supplied excerpt.'}
-    raise QuizError('문제를 생성할 수 없음')
+            valid, errors = [], [str(e)]
+        known = {q.question.casefold() for q in pool}
+        pool += [q for q in valid if q.question.casefold() not in known]
+        covered = request.count < len(request.types) or {q.type for q in pool} >= set(request.types)
+        if len(pool) >= request.count and covered:
+            break
+        errors = errors or ['Too few valid questions or a requested type is missing']
+        payload = {**payload, 'retry': f"Previous output failed validation: {chr(10).join(errors[:20])[:1500]}. "
+                   'Correct the output and copy evidence exactly from the supplied excerpt.'}
+    # 검증을 통과한 문제가 하나라도 있으면 요청보다 적어도 돌려줌
+    if not pool:
+        raise QuizError('문제 형식 또는 교안 근거 검증 실패')
+    return QuizResponse(quiz_id=uuid4(), questions=select_questions(pool, request))
