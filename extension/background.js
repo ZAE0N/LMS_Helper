@@ -1,4 +1,29 @@
+importScripts('config.js');
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+
+// LMS 페이지(콘텐츠 스크립트)는 CORS 때문에 서버로 직접 못 보냄 → 여기서 대신 요청
+async function callServer({ method = 'GET', path, body }) {
+  const r = await fetch(CONFIG.SERVER_URL + path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+  return data;
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === 'api') {
+    callServer(msg).then(data => sendResponse({ ok: true, data })).catch(e => sendResponse({ ok: false, error: e.message }));
+    return true;
+  }
+  if (msg.type === 'open-page') {
+    // 연 LMS 탭 번호를 넘겨서, 뷰어가 직접 못 받는 파일은 그 탭에서 받아 오게 함
+    const sep = msg.page.includes('?') ? '&' : '?';
+    chrome.tabs.create({ url: chrome.runtime.getURL(`${msg.page}${sender.tab ? `${sep}tab=${sender.tab.id}` : ''}`) });
+  }
+});
 
 chrome.runtime.onInstalled.addListener(async () => {
   const { anonId } = await chrome.storage.local.get('anonId');

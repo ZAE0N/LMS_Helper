@@ -149,20 +149,39 @@ def test_cold_failure_and_recovery(setup, monkeypatch):
     assert TestClient(main.app).get('/notices?source=school').status_code == 200
 
 
-def test_failed_extraction_reuses_downloaded_body_on_retry(setup, local_extractor):
+def test_failed_extraction_keeps_list_and_retries_next_refresh(setup, local_extractor):
     crawler, clock, requests, _ = setup
     extractor, llm = local_extractor
     original_chat = llm.chat
     def fail(system, user):
         raise httpx.ConnectError('offline')
     llm.chat = fail
-    assert not crawler.refresh('school')
-    assert len([url for url, _ in requests if url.endswith('view.do')]) == 1
-    clock[0] += 300
-    llm.chat = original_chat
     assert crawler.refresh('school')
-    assert len([url for url, _ in requests if url.endswith('view.do')]) == 2
-    assert len(crawler.listing('school', 10, 1)['items']) == 2
+    items = crawler.listing('school', 10, 1)['items']
+    assert len(items) == 2 and all(n['summary'] is None and n['body'] == '본문' for n in items)
+    llm.chat = original_chat
+    clock[0] += 1800
+    assert crawler.refresh('school')
+    assert all(n['summary'] == '공지 요약' for n in crawler.listing('school', 10, 1)['items'])
+    assert len([url for url, _ in requests if url.endswith('view.do')]) == 2  # 본문은 다시 받지 않음
+
+
+def test_one_bad_article_does_not_block_board(setup, local_extractor):
+    crawler, *_ = setup
+    _, llm = local_extractor
+    original_chat = llm.chat
+    llm.chat = lambda system, user: 'not JSON' if '공지 12' in user else original_chat(system, user)
+    assert crawler.refresh('school')
+    by_id = {n['id']: n for n in crawler.listing('school', 10, 1)['items']}
+    assert by_id['school-12']['summary'] is None and by_id['school-11']['summary'] == '공지 요약'
+
+
+def test_failure_message_names_board(setup):
+    crawler, _, _, failures = setup
+    failures['offline'] = True
+    crawler.refresh('dept')
+    with pytest.raises(NoticeError, match='학과'):
+        crawler.listing('dept', 10, 1)
 
 
 def test_empty_success_is_available_during_later_failure(setup, monkeypatch):

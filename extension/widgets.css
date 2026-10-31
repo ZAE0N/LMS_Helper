@@ -1,0 +1,99 @@
+/* LMS 페이지 오른쪽 서랍. 모든 규칙은 .lmsh-ui 아래에만 적용 */
+.lmsh-ui {
+  --lmsh-accent: #2f6fed;
+  --lmsh-accent-soft: #eaf1ff;
+  --lmsh-line: #e4e7ec;
+  --lmsh-muted: #667085;
+  --lmsh-text: #1d2433;
+  --lmsh-red: #d92d20;
+  --lmsh-red-soft: #fef3f2;
+  --lmsh-orange: #b54708;
+  --lmsh-orange-soft: #fffaeb;
+  font: 13px/1.45 "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
+  color: var(--lmsh-text);
+}
+.lmsh-ui [hidden] { display: none !important; }
+.lmsh-ui button, .lmsh-ui select { font: inherit; color: inherit; margin: 0; }
+
+/* 손잡이 */
+.lmsh-ui .lmsh-handle {
+  position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 2147483000;
+  writing-mode: vertical-rl; border: 0; border-radius: 10px 0 0 10px; padding: 14px 7px;
+  background: var(--lmsh-accent); color: #fff; font-weight: 700; font-size: 12.5px; letter-spacing: .5px;
+  box-shadow: -2px 2px 10px rgba(0,0,0,.2); cursor: pointer; transition: right .25s ease;
+}
+.lmsh-ui.open .lmsh-handle { right: min(640px, 92vw); }
+
+/* 서랍 */
+.lmsh-ui .lmsh-drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 2147483000;
+  width: min(640px, 92vw); background: #fff; box-shadow: -6px 0 24px rgba(16,24,40,.18);
+  display: flex; flex-direction: column; transform: translateX(100%); transition: transform .25s ease;
+}
+.lmsh-ui.open .lmsh-drawer { transform: none; }
+.lmsh-ui .lmsh-top { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--lmsh-line); }
+.lmsh-ui .lmsh-brand { font-size: 15px; }
+.lmsh-ui .lmsh-tabs { display: flex; gap: 2px; flex: 1; background: #f2f4f7; border-radius: 10px; padding: 3px; }
+.lmsh-ui .lmsh-tabs button { flex: 1; border: 0; background: none; border-radius: 8px; padding: 6px 0; cursor: pointer; color: var(--lmsh-muted); font-weight: 600; }
+.lmsh-ui .lmsh-tabs button.on { background: #fff; color: var(--lmsh-accent); box-shadow: 0 1px 2px rgba(16,24,40,.08); }
+.lmsh-ui .lmsh-x { border: 0; background: none; font-size: 22px; line-height: 1; color: var(--lmsh-muted); cursor: pointer; padding: 0 4px; }
+.lmsh-ui .lmsh-body { flex: 1; overflow: auto; padding: 14px 16px 24px; }
+
+/* 공통 */
+.lmsh-ui .lmsh-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.lmsh-ui .lmsh-seg { display: flex; gap: 2px; background: #f2f4f7; border-radius: 999px; padding: 2px; }
+.lmsh-ui .lmsh-seg button { border: 0; background: none; border-radius: 999px; padding: 4px 16px; cursor: pointer; color: var(--lmsh-muted); }
+.lmsh-ui .lmsh-seg button.on { background: var(--lmsh-text); color: #fff; }
+.lmsh-ui .lmsh-select-sm, .lmsh-ui .lmsh-select { border: 1px solid var(--lmsh-line); border-radius: 8px; background: #fff; padding: 3px 8px; height: auto; width: auto; }
+.lmsh-ui .lmsh-select { width: 100%; margin: 4px 0 10px; padding: 6px 8px; }
+.lmsh-ui .lmsh-sample { margin-left: auto; font-size: 11px; color: var(--lmsh-orange); background: var(--lmsh-orange-soft); padding: 1px 8px; border-radius: 999px; }
+.lmsh-ui .lmsh-status { color: var(--lmsh-muted); text-align: center; margin: 14px 0; }
+.lmsh-ui .lmsh-status:empty { display: none; }
+.lmsh-ui .lmsh-title { font-weight: 600; display: block; }
+.lmsh-ui .lmsh-sub { color: var(--lmsh-muted); font-size: 12px; display: block; }
+.lmsh-ui .lmsh-main { flex: 1; min-width: 0; }
+.lmsh-ui .lmsh-btn { border: 0; background: var(--lmsh-accent); color: #fff; border-radius: 8px; padding: 5px 12px; cursor: pointer; flex: none; font-size: 12.5px; }
+.lmsh-ui .lmsh-btn.ghost { background: #fff; color: var(--lmsh-accent); border: 1px solid var(--lmsh-accent); }
+.lmsh-ui .lmsh-btn.wide { width: 100%; padding: 8px; margin: 6px 0 8px; }
+.lmsh-ui .lmsh-btn:disabled { opacity: .5; cursor: default; }
+.lmsh-ui .lmsh-more { width: 100%; border: 1px solid var(--lmsh-line); background: #fff; border-radius: 8px; padding: 6px; cursor: pointer; margin-top: 8px; }
+
+/* 알림: 한 줄 행 (D-day | 제목·할 일 | 과목·날짜) */
+.lmsh-ui .lmsh-notice { border-bottom: 1px solid var(--lmsh-line); }
+.lmsh-ui .lmsh-notice summary { list-style: none; display: flex; align-items: center; gap: 12px; padding: 9px 4px; cursor: pointer; }
+.lmsh-ui .lmsh-notice summary::-webkit-details-marker { display: none; }
+.lmsh-ui .lmsh-notice summary:hover { background: #f9fafb; }
+.lmsh-ui .lmsh-dday { flex: none; width: 64px; text-align: center; font-weight: 700; font-size: 12px; border-radius: 6px; padding: 2px 0; }
+.lmsh-ui .lmsh-dday.none { visibility: hidden; }
+.lmsh-ui .lmsh-dday.urgent { color: var(--lmsh-red); background: var(--lmsh-red-soft); }
+.lmsh-ui .lmsh-dday.soon { color: var(--lmsh-orange); background: var(--lmsh-orange-soft); }
+.lmsh-ui .lmsh-dday.later { color: var(--lmsh-accent); background: var(--lmsh-accent-soft); }
+.lmsh-ui .lmsh-dday.past { color: var(--lmsh-muted); background: #f2f4f7; text-decoration: line-through; }
+.lmsh-ui .lmsh-notice .lmsh-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lmsh-ui .lmsh-notice[open] .lmsh-title { white-space: normal; }
+.lmsh-ui .lmsh-todo { color: var(--lmsh-accent); font-size: 12px; display: block; }
+.lmsh-ui .lmsh-side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 11.5px; color: var(--lmsh-muted); }
+.lmsh-ui .lmsh-course { background: #f2f4f7; border-radius: 6px; padding: 0 6px; }
+.lmsh-ui .lmsh-detail { padding: 0 4px 12px 80px; }
+.lmsh-ui .lmsh-text { white-space: pre-wrap; margin: 0 0 6px; max-height: 260px; overflow: auto; }
+.lmsh-ui .lmsh-meta { margin: 0 0 4px; font-size: 12px; color: var(--lmsh-muted); }
+.lmsh-ui .lmsh-link { color: var(--lmsh-accent); font-size: 12.5px; }
+
+/* 교안: 과목별 */
+.lmsh-ui .lmsh-courses { display: flex; flex-direction: column; gap: 8px; }
+.lmsh-ui .lmsh-course-box { border: 1px solid var(--lmsh-line); border-radius: 10px; }
+.lmsh-ui .lmsh-course-box summary { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; list-style: none; }
+.lmsh-ui .lmsh-course-box summary::-webkit-details-marker { display: none; }
+.lmsh-ui .lmsh-course-box summary::before { content: "▸"; color: var(--lmsh-muted); transition: transform .15s; }
+.lmsh-ui .lmsh-course-box[open] summary::before { transform: rotate(90deg); }
+.lmsh-ui .lmsh-count { margin-left: auto; font-size: 12px; color: var(--lmsh-muted); }
+.lmsh-ui .lmsh-files { padding: 0 14px 8px; }
+.lmsh-ui .lmsh-file { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--lmsh-line); }
+.lmsh-ui .lmsh-file .lmsh-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lmsh-ui .lmsh-pdf { width: 28px; height: 34px; border-radius: 4px; background: #f2f4f7; display: grid; place-items: center; font-size: 8.5px; font-weight: 800; color: var(--lmsh-red); flex: none; }
+
+/* 복습 */
+.lmsh-ui .lmsh-label { font-weight: 600; display: block; }
+.lmsh-ui .lmsh-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.lmsh-ui .lmsh-chip { border: 1px solid var(--lmsh-line); border-radius: 999px; padding: 3px 12px; background: #fff; cursor: pointer; }
+.lmsh-ui .lmsh-chip.on { border-color: var(--lmsh-accent); color: var(--lmsh-accent); background: var(--lmsh-accent-soft); }

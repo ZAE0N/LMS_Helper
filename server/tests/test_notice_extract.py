@@ -59,15 +59,28 @@ def test_deadline_can_be_supported_by_title():
     assert result['deadline'] == '2026-11-03'
 
 
-def test_llm_network_error_returns_sanitized_502(tmp_path, monkeypatch):
+def test_llm_network_error_returns_null_facts_and_stops_calling(tmp_path, monkeypatch):
+    calls = []
     class OfflineLLM:
         def chat(self, system, user):
+            calls.append(user)
             raise httpx.ConnectError('sensitive upstream details')
     extractor = NoticeExtractor(tmp_path, OfflineLLM)
     monkeypatch.setattr(main, 'get_extractor', lambda: extractor)
-    response = TestClient(main.app).post('/notices/extract', json={'items': [{'id': '1', 'title': '', 'body': '공지'}]})
-    assert response.status_code == 502
-    assert 'sensitive' not in response.text
+    items = [{'id': str(i), 'title': '', 'body': f'공지 {i}'} for i in range(3)]
+    response = TestClient(main.app).post('/notices/extract', json={'items': items})
+    assert response.status_code == 200 and 'sensitive' not in response.text
+    assert all(x['summary'] is None and x['deadline'] is None for x in response.json()['items'])
+    assert len(calls) == 1  # 첫 실패 후 나머지는 LLM을 부르지 않음
+
+
+def test_missing_api_key_returns_null_facts(tmp_path, monkeypatch):
+    def no_key():
+        raise KeyError('LLM_API_KEY')
+    monkeypatch.setattr(main, 'get_extractor', lambda: NoticeExtractor(tmp_path, no_key))
+    response = TestClient(main.app).post('/notices/extract', json={'items': [{'id': '1', 'title': '안내', 'body': '본문'}]})
+    assert response.status_code == 200
+    assert response.json() == {'items': [{'id': '1', 'summary': None, 'deadline': None, 'deadline_text': None, 'action': None}]}
 
 
 def test_extract_api_and_crawler_share_content_cache(tmp_path, monkeypatch):
@@ -99,14 +112,54 @@ def test_extract_batch_limits_and_empty_batch(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize('bad_output', ['not JSON', '{}', '{"summary": null}', '[]'])
-def test_bad_llm_output_returns_502_and_is_not_cached(tmp_path, monkeypatch, bad_output):
-    fake = FakeLLM(bad_output)
-    extractor = NoticeExtractor(tmp_path, lambda: fake)
+def test_bad_llm_output_only_nulls_that_item_and_is_not_cached(tmp_path, monkeypatch, bad_output):
+    class PerItemLLM:
+        calls = 0
+        def chat(self, system, user):
+            PerItemLLM.calls += 1
+            return bad_output if '나쁜' in user else facts()
+    extractor = NoticeExtractor(tmp_path, PerItemLLM)
     monkeypatch.setattr(main, 'get_extractor', lambda: extractor)
     client = TestClient(main.app)
-    payload = {'items': [{'id': '1', 'title': '안내', 'body': '본문'}]}
-    response = client.post('/notices/extract', json=payload)
-    assert response.status_code == 502 and 'detail' in response.json()
-    fake.output = facts()
-    assert client.post('/notices/extract', json=payload).status_code == 200
-    assert fake.calls == 2
+    payload = {'items': [{'id': 'bad', 'title': '나쁜 글', 'body': '본문'},
+                         {'id': 'ok', 'title': '안내', 'body': '2026년 11월 3일까지 제출'}]}
+    items = client.post('/notices/extract', json=payload).json()['items']
+    assert items[0]['summary'] is None and items[1]['deadline'] == '2026-11-03'
+    client.post('/notices/extract', json=payload)
+    assert PerItemLLM.calls == 3  # 실패한 글만 다시 호출
+
+
+@pytest.mark.parametrize(('text', 'llm_deadline', 'posted', 'expected'), [
+    ('11월 3일(화)까지', '2026-11-03', '2026-10-29T10:00:00Z', '2026-11-03'),
+    ('11/3까지', '2025-11-03', '2026-10-29', '2026-11-03'),  # LLM 연도가 틀려도 게시일 기준
+    ('1월 5일까지', '2026-01-05', '2026-10-29', '2027-01-05'),
+    ('10월 20일까지', '2026-10-20', '2026-10-29', '2026-10-20'),
+    ('11월 3일까지', '2026-11-03', None, None),
+    ('11월 4일까지', '2026-11-03', '2026-10-29', None),
+    ('2월 30일까지', '2026-02-30', '2026-01-10', None),
+    ('2025년 11월 3일까지', '2026-11-03', '2026-10-29', None),
+])
+def test_year_inferred_from_posted_date(text, llm_deadline, posted, expected):
+    result = validated_facts(facts(llm_deadline, text), '과제', f'과제는 {text} 제출', posted)
+    assert result['deadline'] == expected
+    assert (result['deadline_text'] is None) == (expected is None)
+
+
+def test_llm_call_does_not_hold_lock(tmp_path):
+    from threading import Event, Thread
+    entered, release = Event(), Event()
+    class SlowLLM:
+        def chat(self, system, user):
+            if '느린' in user:
+                entered.set()
+                assert release.wait(3)
+            return facts()
+    extractor = NoticeExtractor(tmp_path, SlowLLM)
+    worker = Thread(target=extractor.extract, args=('느린 글', '본문'))
+    worker.start()
+    try:
+        assert entered.wait(2)
+        assert extractor.extract('빠른 글', '본문')['summary'] == '장학금 신청 안내'
+    finally:
+        release.set()
+        worker.join(3)

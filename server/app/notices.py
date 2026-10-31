@@ -19,6 +19,7 @@ from .notice_extract import NoticeExtractionError, NoticeExtractor, get_extracto
 USER_AGENT = "LMS-Helper/0.1"
 REFRESH_SECONDS = 30 * 60
 RETRY_SECONDS = 5 * 60
+NAMES = {"school": "학교", "dept": "학과"}
 BOARDS = {
     "school": "https://www.inhatc.ac.kr/combBbs/kr/2/list.do",
     "dept": "https://cs.inhatc.ac.kr/bbs/cs/104/artclList.do",
@@ -131,6 +132,7 @@ class NoticeCrawler:
                 raise NoticeError("robots.txt에서 공지 수집을 허용하지 않음")
             return self._request(url)
 
+        batch = self.extractor.batch()
         collected = {}
         for page in range(1, self.pages + 1):
             rows, total = parse_list(fetch(f"{base}?page={page}"), source)
@@ -140,7 +142,7 @@ class NoticeCrawler:
                     cached = {**row, "body": parse_body(fetch(row["url"]))}
                     self._write(row["id"], cached)
                 article = {**cached, **row}
-                facts = self.extractor.extract(article["title"], article["body"])
+                facts = batch.facts(article["title"], article["body"], article["posted_at"])
                 collected[row["id"]] = {**article, **facts}
             if page >= total:
                 break
@@ -161,7 +163,7 @@ class NoticeCrawler:
             try:
                 items = self._refresh(source)
             except (httpx.HTTPError, ValueError, OSError, NoticeError, NoticeExtractionError):
-                state["error"] = "학교 공지를 가져올 수 없음. 잠시 후 다시 시도하세요."
+                state["error"] = f"{NAMES[source]} 공지를 가져올 수 없음. 잠시 후 다시 시도하세요."
                 self._write(source, state)
                 return False
             state["items"] = items
