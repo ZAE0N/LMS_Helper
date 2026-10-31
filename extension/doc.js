@@ -13,6 +13,29 @@ const DocView = (() => {
     return box;
   }
 
+  // 그림: 원본 슬라이드에서 차지하던 폭 그대로. 번역본(글자를 번역해 다시 그린 그림)이 있으면 먼저 보여 주고 원본과 전환
+  function figure(doc, b, translated) {
+    const { t } = App;
+    const url = name => `${CONFIG.SERVER_URL}/documents/${doc.doc_id}/figures/${name}`;
+    const img = h('img', { class: 'fig', alt: '', loading: 'lazy', style: `width:${Math.round((b.width || 0.6) * 100)}%`,
+      src: url(translated && b.translated_image ? b.translated_image : b.image) });
+    const box = h('figure', { class: 'figure' }, img);
+    if (translated && b.translated_image) {
+      let showing = 'tr';
+      const toggle = h('button', { type: 'button', class: 'link', onclick: () => {
+        showing = showing === 'tr' ? 'or' : 'tr';
+        img.src = url(showing === 'tr' ? b.translated_image : b.image);
+        toggle.textContent = showing === 'tr' ? t.figureOriginal : t.figureTranslated;
+      } }, t.figureOriginal);
+      box.append(toggle);
+    }
+    if (translated && b.legend?.length) {
+      box.append(h('figcaption', { class: 'legend' }, h('strong', {}, t.figureText),
+        h('ul', {}, b.legend.map(l => h('li', {}, h('span', { lang: 'ko' }, l.source), ' → ', l.translated)))));
+    }
+    return box;
+  }
+
   // 교재 보기: 서버가 나눈 덩어리(제목·글머리표·문장·코드·그림)를 정리해서 표시.
   // 번역이 덩어리별로 맞지 않은 페이지는 null → 페이지 전체 번역으로 대체
   function book(doc, p, field) {
@@ -22,9 +45,7 @@ const DocView = (() => {
     const box = h('div', { class: 'book' });
     for (const b of blocks) {
       if (b.type === 'image') {
-        const width = Math.round((b.rect[2] - b.rect[0]) * 1.3);
-        box.append(h('img', { class: 'fig', alt: '', loading: 'lazy', style: `width:min(100%, ${width}px)`,
-          src: `${CONFIG.SERVER_URL}/documents/${doc.doc_id}/figures/${b.image}` }));
+        box.append(figure(doc, b, field === 'translated'));
         continue;
       }
       const text = clean(field === 'translated' ? b.translated ?? b.text : b.text);
