@@ -82,7 +82,8 @@ const App = (() => {
   }
 
   // 같은 파일·같은 수정 시각·같은 언어면 서버에 저장된 번역을 다시 씀
-  async function loadDoc(onStep) {
+  // force: 저장된 번역이 있어도 파일을 다시 보냄 (서버에 원본이 없을 때, 예: PDF 보기)
+  async function loadDoc(onStep, { force = false } = {}) {
     const { t, lang } = App;
     const course = params.get('course');
     const file = params.get('file');
@@ -90,7 +91,7 @@ const App = (() => {
     onStep(t.step.meta);
     const meta = await fileMeta(course, file).catch(() => { throw new UserError(t.errDownload); });
     const saved = (await store.get(key))[key];
-    if (saved && saved.updated_at === meta.updated_at) {
+    if (!force && saved && saved.updated_at === meta.updated_at) {
       onStep(t.step.cached);
       try { return await Api.getDocument(saved.doc_id); } catch {}
     }

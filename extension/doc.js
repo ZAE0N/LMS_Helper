@@ -39,9 +39,19 @@ const DocView = (() => {
       if (pdf.loading || pdf.url) return;
       pdf.loading = true;
       pdf.error = null;
+      let resent = false;
       try {
         for (;;) {
-          const res = await Api.layoutPdf(doc.doc_id);
+          let res;
+          try {
+            res = await Api.layoutPdf(doc.doc_id);
+          } catch (e) {
+            // 이 기능 전에 번역한 교안은 서버에 원본이 없음 → 파일을 한 번 다시 보내 원본을 남김
+            if (e.status !== 404 || resent) throw e;
+            resent = true;
+            await App.loadDoc(() => {}, { force: true });
+            continue;
+          }
           if (res.blob) {
             pdf.url = URL.createObjectURL(res.blob);
             break;

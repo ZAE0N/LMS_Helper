@@ -28,7 +28,7 @@ const Api = (() => {
       if (r.status === 202) return { pending: true };
       if (!r.ok) {
         const data = await r.json().catch(() => ({}));
-        throw new Error(data.detail || `HTTP ${r.status}`);
+        throw Object.assign(new Error(data.detail || `HTTP ${r.status}`), { status: r.status });
       }
       return { blob: await r.blob() };
     },
