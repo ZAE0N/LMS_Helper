@@ -119,3 +119,8 @@ mark { background: #fff3c4; border-radius: 3px; padding: 0 1px; }
   .chat { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); }
   .cols.side { grid-template-columns: 1fr; }
 }
+
+/* PDF 보기 (베타) */
+.cols.pdf { display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+.pdf-frame { flex: 1; width: 100%; min-height: 0; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.cols.pdf .status { margin: 60px auto; }

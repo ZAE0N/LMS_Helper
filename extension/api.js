@@ -22,6 +22,16 @@ const Api = (() => {
       return request('/documents', { method: 'POST', body: fd });
     },
     getDocument: id => request(`/documents/${id}`),
+    // 모양 유지 번역 PDF (베타). 서버가 만드는 중이면 { pending: true }
+    async layoutPdf(id) {
+      const r = await fetch(`${CONFIG.SERVER_URL}/documents/${id}/pdf`);
+      if (r.status === 202) return { pending: true };
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        throw new Error(data.detail || `HTTP ${r.status}`);
+      }
+      return { blob: await r.blob() };
+    },
     // doc은 가짜 응답을 만들 때만 사용 (서버로는 보내지 않음)
     chat: (body, doc) => (mock.chat ? FAKE.chat(body, doc) : post('/chat', body)),
     quiz: (body, doc) => (mock.quiz ? FAKE.quiz(body, doc) : post('/quiz', body)),

@@ -27,11 +27,50 @@ const DocView = (() => {
     const counter = h('span', { class: 'counter' });
     const prev = h('button', { type: 'button', class: 'btn ghost', onclick: () => go(current - 1) }, `‹ ${t.prev}`);
     const next = h('button', { type: 'button', class: 'btn ghost', onclick: () => go(current + 1) }, `${t.next} ›`);
-    const modes = [['side', t.side], ['tr', t.translated], ['or', t.original]].map(([k, label]) =>
+    const modes = [['side', t.side], ['tr', t.translated], ['or', t.original], ['pdf', t.pdfMode]].map(([k, label]) =>
       h('button', { type: 'button', 'data-m': k, onclick: () => ((mode = k), paint()) }, label));
     const issue = h('p', { class: 'note warn', hidden: true }, t.issuePage);
     const cols = h('div', { class: 'cols' });
     const termBox = h('div', { class: 'terms' });
+    const pdf = { url: null, error: null, loading: false, frame: h('iframe', { class: 'pdf-frame', title: t.pdfMode }) };
+
+    // 서버가 교안마다 한 번만 만들어 둔 PDF를 받음. 만드는 중이면 5초마다 다시 확인
+    async function loadPdf() {
+      if (pdf.loading || pdf.url) return;
+      pdf.loading = true;
+      pdf.error = null;
+      try {
+        for (;;) {
+          const res = await Api.layoutPdf(doc.doc_id);
+          if (res.blob) {
+            pdf.url = URL.createObjectURL(res.blob);
+            break;
+          }
+          await new Promise(r => setTimeout(r, 5000));
+        }
+      } catch (e) {
+        pdf.error = `${t.pdfError} (${e.message})`;
+      }
+      pdf.loading = false;
+      if (mode === 'pdf') paint();
+    }
+
+    function paintPdf(p) {
+      cols.className = 'cols pdf';
+      termBox.replaceChildren();
+      issue.hidden = true;
+      if (pdf.url) {
+        const src = `${pdf.url}#page=${p.page}`;
+        if (pdf.frame.getAttribute('src') !== src) pdf.frame.src = src;
+        cols.replaceChildren(h('p', { class: 'note' }, t.pdfNote), pdf.frame);
+      } else if (pdf.error) {
+        cols.replaceChildren(h('div', { class: 'status error' }, h('p', {}, pdf.error),
+          h('button', { type: 'button', class: 'btn', onclick: () => { pdf.error = null; paint(); } }, t.retry)));
+      } else {
+        cols.replaceChildren(h('div', { class: 'status' }, h('span', { class: 'spinner' }), h('p', {}, t.pdfPreparing)));
+        loadPdf();
+      }
+    }
 
     function paint() {
       const p = pages[current];
@@ -42,6 +81,7 @@ const DocView = (() => {
       prev.disabled = current === 0;
       next.disabled = current === pages.length - 1;
       issue.hidden = !p.issues?.length;
+      if (mode === 'pdf') return paintPdf(p);
       const empty = !(p.original || '').trim();
       const tr = h('article', { class: 'col' }, h('h3', {}, t.translated),
         empty ? h('p', { class: 'muted' }, t.noText) : Object.assign(h('div', { class: 'text' }), { textContent: clean(p.translated) }));

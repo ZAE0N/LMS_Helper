@@ -17,7 +17,7 @@
 | `background.js` | LMS 페이지 대신 서버 요청(CORS), 확장 화면 열기 |
 | `viewer.html` / `viewer.css` | 확장 화면 틀 (`?mode=` 없음: 교안+챗봇, `review`: 복습, `report`: 리포트) |
 | `viewer.js` | 공통: 교안 받기(뷰어가 직접 → 안 되면 LMS 탭에서 1MB씩) → `/documents` 번역, 같은 파일은 저장된 번역 재사용 |
-| `doc.js` / `quiz.js` / `report.js` / `main.js` | 교안 뷰어+챗봇 / 복습 문제 / 리포트 / 화면 선택 |
+| `doc.js` / `quiz.js` / `report.js` / `main.js` | 교안 뷰어+챗봇(+PDF 보기 베타: 서버가 교안마다 한 번 만든 모양 유지 PDF) / 복습 문제 / 리포트 / 화면 선택 |
 | `sidepanel.*` | 사이드 패널 |
 | `api.js` | 확장 화면의 서버 요청 |
 | `i18n.js` | 확장 화면 문구 (영어·러시아어) |
