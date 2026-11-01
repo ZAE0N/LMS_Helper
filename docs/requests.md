@@ -2,7 +2,7 @@
 
 형식: `- [ ] 날짜 · 요청자 → 담당 · 내용`
 
-- [ ] 2026-11-01 · 카로프 파루흐 → 전정현 · PDF 비밀번호 입력 화면 연결 (`server/pdf-password`, 서버 구현·가짜 LLM 테스트 완료, 아직 푸시하지 않음)
+- [ ] 2026-11-01 · 카로프 파루흐 → 전정현 · PDF 비밀번호 입력 화면 연결 (`server/pdf-password`, 서버 구현·가짜 LLM 테스트 완료)
   - `POST /documents` multipart에 선택 문자열 `password` 추가. 없으면 `401 {"detail":"PDF_PASSWORD_REQUIRED"}`, 틀리면 `401 {"detail":"PDF_PASSWORD_WRONG"}`. 정상 PDF와 성공 응답 형식은 그대로.
   - `extension/api.js`에서 `password`를 FormData에 넣고, `extension/viewer.js`에서 두 오류일 때 비밀번호 입력 → 같은 파일로 재시도. 취소 가능, 틀린 비밀번호는 재입력 안내, 문구는 `i18n.js`에 모으기.
   - 비밀번호는 요청 중 메모리에서만 사용. `chrome.storage`, URL, 로그, 오류 문구에 저장·표시하지 않기. 다운로드한 서명 URL은 서버로 보내지 않고 PDF 내용만 전송.
