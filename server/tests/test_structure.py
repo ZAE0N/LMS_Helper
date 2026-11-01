@@ -183,7 +183,8 @@ class FakeOcr:
     """그림 왼쪽 위 (40,40)~(240,100) 픽셀에 '개인키', 영어 글자는 번역 대상 아님"""
     def __call__(self, png):
         assert png.startswith(b'\x89PNG')
-        box = [[40, 40], [240, 40], [240, 100], [40, 100]]
+        off = round((pymupdf.Pixmap(png).width - 320 * figure_ocr.DPI / 72) / 2)  # 둘레를 넓혀 찍은 그림이면 그만큼 밀림
+        box = [[40 + off, 40 + off], [240 + off, 40 + off], [240 + off, 100 + off], [40 + off, 100 + off]]
         return SimpleNamespace(boxes=[box, box], txts=['개인키', 'Input'], scores=[0.95, 0.99])
 
 
@@ -198,7 +199,7 @@ def test_raster_figure_text_is_found_by_ocr_and_covered(setup, monkeypatch):
     assert len(labels) == 1 and labels[0]['translated'] == 'RU:개인키'
     x0, y0, x1, y1 = labels[0]['rect']
     scale = 72 / figure_ocr.DPI
-    assert abs(x0 - (192 + 40 * scale)) < 1 and abs(y1 - (142 + 100 * scale)) < 1  # 그림 픽셀 → 페이지 좌표 (둘레 8pt 넓혀 찍음)
+    assert abs(x0 - (200 + 40 * scale)) < 1 and abs(y1 - (150 + 100 * scale)) < 1  # 그림 픽셀 → 페이지 좌표
     assert re.fullmatch(r'#[0-9a-f]{6}', labels[0]['color']) and 'fill' not in labels[0] and 'lines' not in labels[0]
     assert '개인키' not in page['original']  # 챗봇·문제용 글은 PDF 글자만
     background = client.get(f"/documents/{doc['doc_id']}/figures/{page['background']}")
