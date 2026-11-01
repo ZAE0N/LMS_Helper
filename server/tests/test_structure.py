@@ -181,7 +181,7 @@ def test_document_cache_is_invalidated_when_translation_prompt_changes(setup, mo
 
 class FakeOcr:
     """그림 왼쪽 위 (40,40)~(240,100) 픽셀에 '개인키', 영어 글자는 번역 대상 아님"""
-    def __call__(self, png):
+    def __call__(self, png, **_):
         assert png.startswith(b'\x89PNG')
         off = round((pymupdf.Pixmap(png).width - 320 * figure_ocr.DPI / 72) / 2)  # 둘레를 넓혀 찍은 그림이면 그만큼 밀림
         box = [[40 + off, 40 + off], [240 + off, 40 + off], [240 + off, 100 + off], [40 + off, 100 + off]]
@@ -382,3 +382,47 @@ def test_ocr_two_line_titles_are_joined_even_from_different_images():
     assert sorted(x['text'] for x in out) == ['데이터', '데이터 분석과 접근법']
     joined = next(x for x in out if x['text'] == '데이터 분석과 접근법')
     assert joined['rect'] == [600, 462, 790, 547] and len(joined['lines']) == 2 and joined['wrap']
+
+
+def test_ocr_label_room_grows_to_the_table_cell_in_the_picture():
+    doc = pymupdf.open()
+    page = doc.new_page(width=600, height=300)
+    page.draw_rect(pymupdf.Rect(100, 100, 300, 160), color=(0, 0, 0), width=1.5)  # 그림 속 표의 한 칸
+    page.draw_rect(pymupdf.Rect(300, 100, 500, 160), color=(0, 0, 0), width=1.5)
+    pix = page.get_pixmap(dpi=figure_ocr.SCAN_DPI)
+    box = figure_ocr._room(pix, pymupdf.Rect(180, 122, 220, 138), pymupdf.Rect(90, 90, 510, 170), '#ffffff', [])
+    assert 100 <= box.x0 < 106 and 294 < box.x1 <= 300 and 100 <= box.y0 < 106 and 154 < box.y1 <= 160
+    near = figure_ocr._room(pix, pymupdf.Rect(180, 122, 220, 138), pymupdf.Rect(90, 90, 510, 170), '#ffffff',
+                            [pymupdf.Rect(250, 122, 280, 138)])
+    assert near.x1 < 250  # 옆 글자 앞에서 멈춤
+
+
+def test_list_items_form_one_group_with_marks_but_cards_stay_apart():
+    doc = pymupdf.open()
+    page = doc.new_page(width=960, height=540)
+    for k, text in enumerate(['첫째 항목입니다', '둘째 항목입니다', '셋째 항목입니다']):
+        page.insert_text((80, 200 + k * 30), '- ' + text, fontname='korea', fontsize=16, color=(0.8, 0, 0))
+    for x0 in (500, 740):  # 나란한 카드 두 장: 서로 다른 묶음
+        page.draw_rect(pymupdf.Rect(x0, 160, x0 + 200, 400), color=(0, 0, 0.6))
+        for k in range(2):
+            page.insert_text((x0 + 16, 200 + k * 30), f'- 카드 {x0} 항목 {k}', fontname='korea', fontsize=16)
+    blocks = analyze_pdf(doc.tobytes())[0]['blocks']
+    items = [b for b in blocks if b['text'].endswith('항목입니다')]
+    assert len({b['group'] for b in items}) == 1 and all(b['mark']['char'] == '-' and b['mark']['color'] == '#cc0000' for b in items)
+    gx0, gy0, gx1, gy1 = items[0]['gbox']
+    assert gx0 <= items[0]['mark']['rect'][0] and gy0 <= items[0]['rect'][1] and gy1 >= items[-1]['rect'][3]
+    assert all(items[0]['mark']['rect'] in b['lines'] or b['mark']['rect'] in b['lines'] for b in items)  # 기호도 배경에서 지움
+    cards = {b['group'] for b in blocks if b['text'].startswith('카드')}
+    assert len(cards) == 2
+
+
+def test_small_word_pictures_side_by_side_are_read_as_one_line():
+    doc = pymupdf.open()
+    page = doc.new_page(width=600, height=400)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 80, 40), False)
+    pix.set_rect(pix.irect, (255, 255, 255))
+    for x0 in (100, 170, 240):  # "강의" "계획" "안내" 처럼 낱말마다 따로 붙인 그림 (조금씩 겹침)
+        page.insert_image(pymupdf.Rect(x0, 200, x0 + 80, 238), pixmap=pix)
+    page.insert_image(pymupdf.Rect(100, 300, 180, 338), pixmap=pix)  # 다른 줄
+    lines = figure_ocr._strips(page, [pymupdf.Rect(50, 150, 500, 360)])
+    assert sorted((round(r.x0 / 10), round(r.x1 / 10), round(r.y0 / 10)) for r in lines) == [(10, 18, 30), (10, 32, 20)]

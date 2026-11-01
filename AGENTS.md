@@ -37,7 +37,7 @@ LMS 페이지 ─ extension/content.js  (로그인 세션으로 Canvas API 읽�
   → `{doc_id, lang, course, needs_review[], issue_pages[], pages: [{page, original, translated, terms[], issues[], size, image, background?, blocks[]}]}`
   - `original`은 띄어쓰기를 되살린 페이지 글 (챗봇·복습에 사용), `translated`는 페이지 전체 번역
   - **슬라이드 보기**: 확장은 `background`(번역할 글자를 지운 페이지 그림) 위 같은 자리에 블록의 `translated`를 올려 원본 모양을 유지. `size`: `[폭, 높이]`(pt), `image`: 원본 페이지 그림
-  - `blocks`: `[{type, level: 0~3, text, translated?, rect, box, size, color, bold, align?, wrap?, ocr?, code?, deco?}]` (좌표는 pt, `[x0, y0, x1, y1]`)
+  - `blocks`: `[{type, level: 0~3, text, translated?, rect, box, size, color, bold, align?, wrap?, ocr?, code?, deco?, indent?, mark?, group?, gbox?}]` (좌표는 pt, `[x0, y0, x1, y1]`)
     - `type`: `heading` · `bullet` · `text` · `code` · `label`(그림 속 글자) · `comment`(코드 속 한글 주석) · `codetext`(코드 속 한글 덩어리, 번역 단위) · `codeline`(codetext를 번역문으로 바꿔 다시 쓴 코드 줄)
     - 화면에는 `codetext`가 아니라 `codeline`을 올림 (코드 문자는 그대로, 한글만 번역). `code: true`인 그림 속 글자(표 속 코드)도 같은 방식
     - `codetext` 단위: 한글이 있는 문자열은 따옴표 안 전체(문맥 유지), 문자열·코드 속 HTML은 태그 사이 글, 나머지는 이어진 한글 덩어리. 그림 속 글자는 한 글자도 번역
@@ -46,6 +46,8 @@ LMS 페이지 ─ extension/content.js  (로그인 세션으로 Canvas API 읽�
     - 주소·숫자만 있는 줄, 번역해도 같은 글은 원문 그대로(지우지 않음). 고유명사는 널리 쓰는 외국어 이름이 있으면 번역, 한국에만 있는 이름은 한국어 그대로(애매하면 그대로)
     - 통째로 붙인 그림(사진·캡처) 속 한글은 OCR로 찾아 `label`(`ocr: true`)로 번역하고, 배경에서는 그 자리를 둘레 색으로 덮음 (OCR이 안 되면 그림은 원본)
     - 머리·꼬리 장식 글(학교명, 학과명 등)도 번역(`deco: true`). 단, `original`(챗봇·복습용 글)에는 넣지 않음
+    - `indent`: 첫 줄만 들여 쓰는 폭(pt, 글머리 기호 뒤에서 시작). `mark`: 줄 앞 글머리 기호 `{char, rect, color, size}`
+    - 목록 묶음: 세로로 이어진 항목은 같은 `group` 번호와 묶음 자리 `gbox`를 가짐. 확장은 `gbox` 안에 항목을 위에서부터 쌓고 묶음 전체를 같은 비율로 줄이며, 글머리 기호는 `mark`로 다시 그림 (배경에서는 기호까지 지움)
 - `GET /documents/{doc_id}` → 위와 동일
 - `GET /documents/{doc_id}/figures/{name}` → 페이지 그림 (`{page}.jpg` 원본, `{page}-bg.jpg` 배경, JPEG)
 - `GET /documents/{doc_id}/pdf` → 모양을 유지한 번역 PDF (베타, 확장에서는 숨김). 아직 만드는 중이면 `202 {"status": "processing"}`, 기능 꺼짐 503, 원본 없음 404

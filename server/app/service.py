@@ -14,7 +14,7 @@ from .translate import LANGS, PROMPT_VERSION, Cache, glossary_version, translate
 ROOT = Path(__file__).resolve().parent.parent
 GLOSSARY_DIR = Path(os.getenv("GLOSSARY_DIR", ROOT / "glossary"))
 DATA_DIR = Path(os.getenv("DATA_DIR", ROOT / "data"))
-STRUCTURE_VERSION = "slide-v7"  # 페이지 형식(blocks 등)을 바꾸면 올려서 교안을 새로 만들게 함
+STRUCTURE_VERSION = "slide-v8"  # 페이지 형식(blocks 등)을 바꾸면 올려서 교안을 새로 만들게 함
 _DOCUMENT_LOCKS = [Lock() for _ in range(64)]
 _PAGE_LOCKS = [Lock() for _ in range(64)]
 
@@ -135,7 +135,8 @@ def save_pages(doc_id: str, data: bytes, page: dict, blocks: list[dict]) -> None
     """원본 페이지 그림(image)과 번역할 글자를 지운 배경(background) 저장. 확장은 배경 위 같은 자리에 번역문을 올림"""
     folder = figures_dir(doc_id)
     n = page["page"]
-    changed = [b for b in blocks if b.get("translated") not in (None, b["text"])]
+    # 목록 묶음은 확장이 통째로 다시 그리므로 바뀌지 않은 항목(주소 등)도 지움
+    changed = [b for b in blocks if b.get("translated") not in (None, b["text"]) or b.get("group") is not None and "translated" in b]
     erase = [b["lines"] for b in changed if not b.get("ocr")]
     fills = [(line, b["fill"]) for b in changed if b.get("ocr") for line in b["lines"]]
     covers = [r for b in changed for r in b.get("hl", [])]

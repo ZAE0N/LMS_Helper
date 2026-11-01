@@ -107,6 +107,15 @@ mark { background: linear-gradient(transparent 52%, var(--hl) 52%); color: inher
 .ov.center:not(.label) { align-items: flex-start; }
 .ov.nowrap, .ov.ocr { white-space: nowrap; }
 .ov.comment, .ov.codeline { display: flex; align-items: center; line-height: 1.05; white-space: pre; font-family: Consolas, "D2Coding", monospace; }
+/* 목록 묶음: 항목을 위에서부터 쌓음. 글머리 기호(.mk)는 원래 자리에 다시 그림 */
+.ov.flow { white-space: normal; }
+.ov.flow .fi { position: relative; white-space: pre-wrap; overflow-wrap: break-word; }
+.ov.flow .fi.center { text-align: center; }
+.ov.flow .mk { position: absolute; top: 0; text-indent: 0; }
+.ov.flow .fi.center .mk { position: static; margin-right: .3em; }
+.ov.flow.more { cursor: help; }
+.ov.flow.more:hover, .ov.flow.more:focus { overflow: visible; height: auto !important; min-height: var(--h); z-index: 5; outline: 2px solid var(--ink);
+  background: #fff; box-shadow: 0 6px 18px rgba(27, 42, 74, .25); }
 /* 최소 크기로도 칸에 안 들어가는 번역문: 칸 안에서 자르고, 마우스·Tab으로 전체 보기 (그림 속 글자·한 줄 글자도. 그래서 위 규칙들 뒤에 둠) */
 .ov.more { cursor: help; max-height: var(--clip); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--lines); white-space: normal; overflow-wrap: break-word; }
 .ov.more:hover, .ov.more:focus { display: block; -webkit-line-clamp: none; max-height: none; overflow: visible; height: auto !important; min-height: var(--h); z-index: 5;
