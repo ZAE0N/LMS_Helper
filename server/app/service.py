@@ -113,7 +113,7 @@ def save_pages(doc_id: str, data: bytes, page: dict, blocks: list[dict]) -> None
     folder = figures_dir(doc_id)
     n = page["page"]
     changed = [b for b in blocks if b.get("translated") not in (None, b["text"])]
-    erase = [line for b in changed if not b.get("ocr") for line in b["lines"]]
+    erase = [b["lines"] for b in changed if not b.get("ocr")]
     fills = [(line, b["fill"]) for b in changed if b.get("ocr") for line in b["lines"]]
     page["image"] = f"{n}.jpg"
     if erase or fills:

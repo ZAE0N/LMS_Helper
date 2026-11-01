@@ -21,8 +21,10 @@ def slide_pdf() -> bytes:
     page.insert_text((115, 170), '기본 지식', fontname='korea', fontsize=18)
     page.insert_text((70, 210), 'const abi = [1, 2];', fontname='cour', fontsize=12)
     page.insert_text((70, 226), 'console.log(abi);', fontname='cour', fontsize=12)
-    for x in (100, 300, 500):  # 도형 묶음 = 다이어그램
+    for x in (100, 300, 500):  # 화살표로 이어진 도형 묶음 = 다이어그램
         page.draw_rect(pymupdf.Rect(x, 280, x + 120, 380), color=(0, 0, 1), width=2)
+        if x < 500:
+            page.draw_line((x + 120, 330), (x + 200, 330), color=(0, 0, 0), width=1)
     page.insert_text((110, 330), '이전 블록', fontname='korea', fontsize=10)
     page.insert_text((40, 520), '인하공업전문대학', fontname='korea', fontsize=10)  # 꼬리말
     data = doc.tobytes()
