@@ -50,14 +50,14 @@ function updateToast({ translated }) {
   style.textContent = `
     .toast { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 2147483647;
       pointer-events: none; user-select: none; max-width: min(640px, 92vw);
-      background: rgba(17, 24, 39, .92); color: #fff; border-radius: 999px; padding: 10px 18px;
-      font: 14px/1.4 "Segoe UI", "Malgun Gothic", system-ui, sans-serif; box-shadow: 0 6px 20px rgba(0,0,0,.25);
+      background: #1b2a4a; color: #fff; border-radius: 10px; padding: 10px 18px;
+      font: 500 14px/1.45 "LMSH Pretendard", "Segoe UI", "Malgun Gothic", system-ui, sans-serif; box-shadow: 0 8px 24px rgba(27,42,74,.3);
       animation: in .25s ease-out; }
     @keyframes in { from { opacity: 0; transform: translate(-50%, -8px); } }
     :host-context(html.lmsh-drawer-open) .toast { left: calc((100vw - min(640px, 92vw)) / 2); } /* 서랍과 겹치지 않게 */`;
   const box = document.createElement('div');
   box.className = 'toast';
-  box.textContent = `🌐 ${TOAST_TEXT[lang]}`;
+  box.textContent = TOAST_TEXT[lang];
   root.append(style, box);
   document.body.append(toastHost);
 }

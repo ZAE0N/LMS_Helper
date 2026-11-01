@@ -206,7 +206,7 @@ const DocView = (() => {
     let mode = !pages.some(slideReady) ? 'text' : korean ? 'or' : 'tr';
 
     const pick = h('select', { class: 'page-pick', 'aria-label': t.pages, onchange: e => go(Number(e.target.value)) },
-      pages.map((p, i) => h('option', { value: i }, `${t.page} ${p.page} / ${pages[pages.length - 1].page}${p.issues?.length ? '  !' : ''}`)));
+      pages.map((p, i) => h('option', { value: i }, `${t.pageOf(p.page, pages[pages.length - 1].page)}${p.issues?.length ? '  !' : ''}`)));
     const prev = h('button', { type: 'button', class: 'icon', title: t.prev, 'aria-label': t.prev, onclick: () => go(current - 1) }, '‹');
     const next = h('button', { type: 'button', class: 'icon', title: t.next, 'aria-label': t.next, onclick: () => go(current + 1) }, '›');
     const modes = (korean ? [['or', t.original], ['text', t.textMode]] : [['tr', t.translated], ['or', t.original], ['side', t.side], ['text', t.textMode]]).map(([k, label]) =>
@@ -218,11 +218,11 @@ const DocView = (() => {
     const review = doc.needs_review?.length ? h('span', { class: 'warn-badge soft', title: t.needsReview }, 'i') : null;
     const stage = h('div', { class: 'stage' });
     const chat = Chat(doc, n => goPage(n), () => toggle('chat', false));
-    const chatBtn = h('button', { type: 'button', class: 'chat-toggle', 'aria-expanded': 'false', onclick: () => toggle('chat') }, `💬 ${t.chatOpen}`);
+    const chatBtn = h('button', { type: 'button', class: 'chat-toggle', 'aria-expanded': 'false', onclick: () => toggle('chat') }, t.chatOpen);
     const quiz = QuizPanel(doc, () => pages[current].page, () => toggle('quiz', false));
-    const quizBtn = h('button', { type: 'button', class: 'tool-btn quiz-toggle', 'aria-expanded': 'false', onclick: () => toggle('quiz') }, `📝 ${t.quizOpen}`);
+    const quizBtn = h('button', { type: 'button', class: 'tool-btn quiz-toggle', 'aria-expanded': 'false', onclick: () => toggle('quiz') }, t.quizOpen);
     const saveBtn = h('button', { type: 'button', class: 'tool-btn save-pdf', title: t.savePdf,
-      onclick: () => printDoc(doc, !korean && mode !== 'or') }, `⬇ ${t.savePdf}`);
+      onclick: () => printDoc(doc, !korean && mode !== 'or') }, t.savePdf);
     // 왼쪽 페이지 목록: 열면 슬라이드를 옆으로 밀고 들어옴 (GitHub 파일 목록처럼)
     // 목록 제목: 여러 페이지에 반복되는 단원 제목 대신 그 페이지의 첫 항목
     const headings = {};
@@ -313,7 +313,9 @@ const DocView = (() => {
       h('nav', { class: 'crumbs' }, listBtn, prev, pick, next, h('span', { class: 'issue-wrap' }, warn, issues), review),
       h('div', { class: 'seg' }, modes),
       saveBtn, quizBtn, chatBtn);
-    app.replaceChildren(h('div', { class: 'doc' }, toolbar, h('div', { class: 'doc-body' }, list, stage, chat, quiz)));
+    document.querySelector('.bar .toolbar')?.remove();
+    document.querySelector('.bar .titles').after(toolbar); // 제목과 같은 줄: 슬라이드 자리를 넓힘
+    app.replaceChildren(h('div', { class: 'doc' }, h('div', { class: 'doc-body' }, list, stage, chat, quiz)));
     new ResizeObserver(() => layout()).observe(stage);
     for (const name of ['pages', 'chat']) {
       try { if (localStorage.getItem(`panel:${name}`)) toggle(name, true); } catch {}
@@ -343,7 +345,7 @@ const DocView = (() => {
       h('p', {}, m.content),
       m.role === 'assistant' && m.citations ? h('div', { class: 'cites' },
         m.citations.length
-          ? m.citations.map(c => h('button', { type: 'button', class: 'cite', title: c.quote || '', onclick: () => goPage(c.page) }, `${t.page} ${c.page}`))
+          ? m.citations.map(c => h('button', { type: 'button', class: 'cite', title: c.quote || '', onclick: () => goPage(c.page) }, t.pageNo(c.page)))
           : h('span', { class: 'muted' }, t.noSource)) : null);
     const paint = () => {
       box.replaceChildren(...(state.log.length ? state.log.map(bubble) : [h('p', { class: 'muted hint' }, t.chatHint)]));

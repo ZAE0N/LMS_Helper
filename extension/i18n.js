@@ -1,6 +1,10 @@
 // 확장 화면(교안 뷰어·복습·리포트) 문구. LMS 안 서랍은 한국어 + 크롬 번역
 const I18N = {
   ko: {
+    pageNo: n => `${n}쪽`,
+    pageOf: (n, total) => `${n} / ${total}쪽`,
+    pageRange: (a, b) => `${a}–${b}쪽`,
+    reportLead: (q, a, n, B, A) => ['지금까지 복습을 ', B(`${q}번`), ' 했고 정답률은 ', A(a), '입니다. 교안에 대해 질문은 ', B(`${n}번`), ' 했습니다.'],
     langName: '한국어',
     viewerTitle: '교안',
     reviewTitle: '복습',
@@ -98,6 +102,11 @@ const I18N = {
     wrongCount: n => `${n}번 틀림`
   },
   en: {
+    pageNo: n => `p. ${n}`,
+    pageOf: (n, total) => `Page ${n} / ${total}`,
+    pageRange: (a, b) => `pp. ${a}–${b}`,
+    reportLead: (q, a, n, B, A) => ['You finished ', B(`${q} review${q === 1 ? '' : 's'}`), ' and answered ', A(a), ' correctly. You asked ',
+      B(`${n} question${n === 1 ? '' : 's'}`), ' about your materials.'],
     langName: 'English',
     viewerTitle: 'Course material',
     reviewTitle: 'Review',
@@ -200,6 +209,10 @@ const I18N = {
     wrongCount: n => `${n} wrong`
   },
   ru: {
+    pageNo: n => `с. ${n}`,
+    pageOf: (n, total) => `Стр. ${n} / ${total}`,
+    pageRange: (a, b) => `с. ${a}–${b}`,
+    reportLead: (q, a, n, B, A) => ['Пройдено повторений: ', B(String(q)), ', правильных ответов — ', A(a), '. Вопросов по материалам: ', B(String(n)), '.'],
     langName: 'Русский',
     viewerTitle: 'Материал курса',
     reviewTitle: 'Повторение',

@@ -50,7 +50,7 @@ const QuizView = (() => {
         const btns = q.choices.map((c, k) => h('button', { type: 'button', class: 'choice', onclick: () => {
           chosen = k;
           btns.forEach((b, j) => b.classList.toggle('on', j === k));
-        } }, c));
+        } }, h('span', { class: 'key', 'aria-hidden': 'true' }, 'ABCDEFGH'[k]), h('span', {}, c)));
         body.append(...btns);
         read = async () => {
           if (chosen < 0) return null;
@@ -105,12 +105,12 @@ const QuizView = (() => {
           r.extra ? h('p', {}, r.extra) : null,
           r.correct ? null : h('p', {}, h('b', {}, `${t.answer}: `), r.answerText),
           q.explanation ? h('p', {}, h('b', {}, `${t.explanation}: `), q.explanation) : null,
-          q.page ? h('a', { class: 'link', href: pageLink(q.page), target: '_blank' }, `${t.page} ${q.page} ↗`) : null].filter(Boolean));
+          q.page ? h('a', { class: 'ref', href: pageLink(q.page), target: '_blank' }, t.pageNo(q.page)) : null].filter(Boolean));
       });
 
       app.replaceChildren(h('div', { class: 'quiz' },
         h('a', { class: 'link back', href: pageLink(params.get('from')) }, t.backToMaterial),
-        h('div', { class: 'q-top' }, h('span', { class: 'muted' }, `${t.progress(i + 1, quiz.questions.length)}${pages ? ` · ${t.page} ${pages[0]}–${pages[1]}` : ''}`),
+        h('div', { class: 'q-top' }, h('span', { class: 'muted' }, `${t.progress(i + 1, quiz.questions.length)}${pages ? ` · ${t.pageRange(pages[0], pages[1])}` : ''}`),
           h('span', { class: 'tag' }, t.types[q.type] || q.type)),
         h('div', { class: 'bar-track' }, h('div', { class: 'bar-fill', style: `width:${(i / quiz.questions.length) * 100}%` })),
         h('h2', { class: 'q-text' }, q.question),
@@ -129,7 +129,7 @@ const QuizView = (() => {
       app.replaceChildren(h('div', { class: 'quiz done' },
         h('p', { class: 'muted' }, t.result),
         h('p', { class: 'big' }, `${res.score} / ${res.total}`),
-        weak.length ? h('div', {}, h('h3', {}, t.wrongPages), h('div', { class: 'chips' }, weak.map(p => h('a', { class: 'chip', href: pageLink(p), target: '_blank' }, `${t.page} ${p}`)))) : null,
+        weak.length ? h('div', {}, h('h3', {}, t.wrongPages), h('div', { class: 'chips' }, weak.map(p => h('a', { class: 'chip', href: pageLink(p), target: '_blank' }, t.pageNo(p))))) : null,
         h('div', { class: 'q-actions' },
           h('button', { type: 'button', class: 'btn', onclick: () => render(doc) }, t.retryQuiz),
           h('a', { class: 'btn ghost', href: pageLink(params.get('from')) }, t.backToMaterial),

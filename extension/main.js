@@ -17,7 +17,7 @@
 
   const title = { doc: t.viewerTitle, review: t.reviewTitle, report: t.reportTitle }[mode];
   const name = params.get('name') || '';
-  document.getElementById('title').textContent = mode === 'report' ? title : `${title} · ${name}`;
+  document.getElementById('title').textContent = mode === 'report' ? title : mode === 'doc' ? name || title : `${title} · ${name}`;
   document.getElementById('sub').textContent = params.get('courseName') || '';
   document.title = `${title}${name && mode !== 'report' ? ` · ${name}` : ''} — LMS Helper`;
 

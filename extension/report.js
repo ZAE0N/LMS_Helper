@@ -27,20 +27,25 @@ const ReportView = (() => {
       app.replaceChildren(h('div', { class: 'status' }, h('p', {}, t.noData)));
       return;
     }
-    const tile = (label, value) => h('div', { class: 'tile' }, h('span', { class: 'muted' }, label), h('strong', {}, value));
+    const B = x => h('b', {}, x);
+    const A = x => h('b', { class: 'acc' }, pct(x));
+    const lead = h('p', { class: 'report-lead' }, t.reportLead(r.quizzes_taken ?? 0, r.accuracy, r.questions_asked ?? 0, B, A));
     const typeRows = Object.entries(r.accuracy_by_type || {}).map(([k, v]) =>
       h('div', { class: 'type-row' }, h('span', {}, t.types[k] || k), h('div', { class: 'bar-track' }, h('div', { class: 'bar-fill', style: `width:${pct(v)}` })), h('span', { class: 'num' }, pct(v))));
-    const weak = (r.weak_pages || []).map(w => {
-      const link = docLink(w.doc_id, w.page);
-      const label = `${docName(w.doc_id)} · ${t.page} ${w.page}`;
-      return h('li', {}, link ? h('a', { href: link, target: '_blank' }, label) : label, h('span', { class: 'muted' }, ` ${t.wrongCount(w.wrong)}`));
-    });
+    // 약한 페이지·시험 예상의 근거 페이지는 인덱스 탭: 누르면 교안의 그 페이지
+    const ref = (id, page) => {
+      const link = docLink(id, page);
+      return link ? h('a', { class: 'ref', href: link, target: '_blank' }, t.pageNo(page)) : h('span', { class: 'chip' }, t.pageNo(page));
+    };
+    const weak = (r.weak_pages || []).map(w => h('li', {}, ref(w.doc_id, w.page), h('span', {}, docName(w.doc_id)),
+      h('span', { class: 'muted' }, t.wrongCount(w.wrong))));
+    const docId = params.get('doc_id') || (r.weak_pages || [])[0]?.doc_id;
     const points = (r.exam_points || []).map(p => h('div', { class: 'point' },
       h('strong', {}, p.point_tr), h('p', {}, p.why_tr),
-      h('div', { class: 'chips' }, (p.pages || []).map(n => h('span', { class: 'chip' }, `${t.page} ${n}`)))));
+      h('div', { class: 'chips' }, (p.pages || []).map(n => ref(docId, n)))));
 
     app.replaceChildren(h('div', { class: 'report' },
-      h('div', { class: 'tiles' }, tile(t.quizzesTaken, r.quizzes_taken ?? 0), tile(t.accuracy, pct(r.accuracy)), tile(t.asked, r.questions_asked ?? 0)),
+      lead,
       typeRows.length ? h('section', {}, h('h2', {}, t.byType), typeRows) : null,
       weak.length ? h('section', {}, h('h2', {}, t.weakPages), h('ul', { class: 'weak' }, weak)) : null,
       points.length ? h('section', {}, h('h2', {}, t.examPoints, h('span', { class: 'tag' }, t.examNote)), points) : null,

@@ -1,18 +1,25 @@
 /* LMS 페이지 오른쪽 서랍. 모든 규칙은 .lmsh-ui 아래에만 적용 */
+@font-face {
+  font-family: "LMSH Pretendard";
+  src: url("chrome-extension://__MSG_@@extension_id__/fonts/PretendardVariable.woff2") format("woff2-variations");
+  font-weight: 45 920; font-display: swap;
+}
 .lmsh-ui {
-  --lmsh-accent: #1f5fd6;
-  --lmsh-accent-soft: #e6eeff;
-  --lmsh-line: #cfd6e0;
-  --lmsh-line-strong: #98a2b3;
-  --lmsh-muted: #475467;
-  --lmsh-text: #101828;
-  --lmsh-panel: #f2f4f7;
-  --lmsh-red: #c4320a;
-  --lmsh-red-soft: #fee4e2;
-  --lmsh-orange: #b54708;
-  --lmsh-orange-soft: #fef0c7;
-  font: 13.5px/1.45 "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
+  --lmsh-ink: #1b2a4a;
+  --lmsh-accent: #3046c5;
+  --lmsh-accent-soft: #e8ebfa;
+  --lmsh-line: #d5dbe5;
+  --lmsh-line-strong: #aab3c3;
+  --lmsh-muted: #5a6478;
+  --lmsh-text: #1b2a4a;
+  --lmsh-panel: #eef1f5;
+  --lmsh-red: #c2341d;
+  --lmsh-red-soft: #fbe9e6;
+  --lmsh-orange: #a15c00;
+  --lmsh-orange-soft: #fff4db;
+  font: 13.5px/1.45 "LMSH Pretendard", "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
   color: var(--lmsh-text);
+  -webkit-font-smoothing: antialiased;
 }
 .lmsh-ui [hidden] { display: none !important; }
 .lmsh-ui button, .lmsh-ui select, .lmsh-ui input { font: inherit; color: inherit; margin: 0; }
@@ -22,7 +29,7 @@
 .lmsh-ui .lmsh-handle {
   position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 2147483000;
   writing-mode: vertical-rl; border: 0; border-radius: 10px 0 0 10px; padding: 14px 7px;
-  background: var(--lmsh-accent); color: #fff; font-weight: 700; font-size: 12.5px; letter-spacing: .5px;
+  background: var(--lmsh-ink); color: #fff; font-weight: 700; font-size: 12.5px; letter-spacing: .3px;
   box-shadow: -2px 2px 10px rgba(0,0,0,.25); cursor: pointer; transition: right .25s ease;
 }
 .lmsh-ui.open .lmsh-handle { right: min(640px, 92vw); }
@@ -35,11 +42,11 @@
 }
 .lmsh-ui.open .lmsh-drawer { transform: none; }
 .lmsh-ui .lmsh-top { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #fff; border-bottom: 2px solid var(--lmsh-line); }
-.lmsh-ui .lmsh-brand { font-size: 15px; color: var(--lmsh-accent); }
+.lmsh-ui .lmsh-brand { font-size: 15px; font-weight: 800; color: var(--lmsh-ink); letter-spacing: -.2px; }
 .lmsh-ui .lmsh-tabs { display: flex; gap: 4px; flex: 1; }
 .lmsh-ui .lmsh-tabs button { flex: 1; border: 1px solid var(--lmsh-line); background: #fff; border-radius: 8px; padding: 7px 0; cursor: pointer; color: var(--lmsh-text); font-weight: 700; font-size: 14px; }
-.lmsh-ui .lmsh-tabs button:hover { border-color: var(--lmsh-accent); }
-.lmsh-ui .lmsh-tabs button.on { background: var(--lmsh-accent); border-color: var(--lmsh-accent); color: #fff; }
+.lmsh-ui .lmsh-tabs button:hover { border-color: var(--lmsh-line-strong); }
+.lmsh-ui .lmsh-tabs button.on { background: var(--lmsh-ink); border-color: var(--lmsh-ink); color: #fff; }
 .lmsh-ui .lmsh-x { border: 0; background: none; font-size: 24px; line-height: 1; color: var(--lmsh-text); cursor: pointer; padding: 0 4px; }
 .lmsh-ui .lmsh-body { flex: 1; overflow: auto; padding: 14px 16px 24px; background: #fff; }
 
@@ -52,10 +59,10 @@
 .lmsh-ui .lmsh-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .lmsh-ui .lmsh-seg { display: flex; gap: 4px; }
 .lmsh-ui .lmsh-seg button { border: 1px solid var(--lmsh-line); background: #fff; border-radius: 999px; padding: 4px 14px; cursor: pointer; color: var(--lmsh-text); font-weight: 600; }
-.lmsh-ui .lmsh-seg button:hover { border-color: var(--lmsh-accent); }
+.lmsh-ui .lmsh-seg button:hover { border-color: var(--lmsh-line-strong); }
 .lmsh-ui .lmsh-seg button.on { background: var(--lmsh-text); border-color: var(--lmsh-text); color: #fff; }
 .lmsh-ui .lmsh-langs button { padding: 3px 12px; font-size: 12.5px; }
-.lmsh-ui .lmsh-langs button.on { background: var(--lmsh-accent); border-color: var(--lmsh-accent); }
+.lmsh-ui .lmsh-langs button.on { background: var(--lmsh-ink); border-color: var(--lmsh-ink); }
 .lmsh-ui .lmsh-select-sm, .lmsh-ui .lmsh-select { border: 1px solid var(--lmsh-line-strong); border-radius: 8px; background: #fff; padding: 4px 8px; height: auto; width: auto; }
 .lmsh-ui .lmsh-select { width: 100%; margin: 4px 0 12px; padding: 7px 8px; }
 .lmsh-ui .lmsh-sample { margin-left: auto; font-size: 11px; color: var(--lmsh-orange); background: var(--lmsh-orange-soft); padding: 1px 8px; border-radius: 999px; }
@@ -64,8 +71,9 @@
 .lmsh-ui .lmsh-title { font-weight: 700; display: block; color: var(--lmsh-text); }
 .lmsh-ui .lmsh-sub { color: var(--lmsh-muted); font-size: 12px; display: block; }
 .lmsh-ui .lmsh-main { flex: 1; min-width: 0; }
-.lmsh-ui .lmsh-btn { border: 1px solid var(--lmsh-accent); background: var(--lmsh-accent); color: #fff; border-radius: 8px; padding: 5px 12px; cursor: pointer; flex: none; font-size: 12.5px; font-weight: 600; text-decoration: none; white-space: nowrap; }
-.lmsh-ui .lmsh-btn.ghost { background: #fff; color: var(--lmsh-accent); }
+.lmsh-ui .lmsh-btn { border: 1px solid var(--lmsh-ink); background: var(--lmsh-ink); color: #fff; border-radius: 8px; padding: 5px 12px; cursor: pointer; flex: none; font-size: 12.5px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.lmsh-ui .lmsh-btn.ghost { background: #fff; color: var(--lmsh-ink); border-color: var(--lmsh-line-strong); }
+.lmsh-ui .lmsh-btn.ghost:hover { border-color: var(--lmsh-ink); filter: none; }
 .lmsh-ui .lmsh-btn:hover { filter: brightness(.95); }
 .lmsh-ui .lmsh-btn.wide { width: 100%; padding: 9px; margin: 8px 0 10px; }
 .lmsh-ui .lmsh-btn:disabled { opacity: .5; cursor: default; }
@@ -74,7 +82,8 @@
 .lmsh-ui .lmsh-list { display: flex; flex-direction: column; gap: 6px; }
 .lmsh-ui .lmsh-notice { display: flex; align-items: flex-start; gap: 12px; padding: 10px 12px; border: 1px solid var(--lmsh-line); border-radius: 10px;
   text-decoration: none; color: var(--lmsh-text); background: #fff; }
-.lmsh-ui a.lmsh-notice:hover { border-color: var(--lmsh-accent); background: #f8faff; }
+.lmsh-ui a.lmsh-notice:hover { border-color: var(--lmsh-line-strong); background: #f7f8fa; }
+.lmsh-ui a.lmsh-notice:hover .lmsh-title { text-decoration: underline; text-underline-offset: 3px; }
 .lmsh-ui .lmsh-notice .lmsh-title { flex: 1; min-width: 0; white-space: normal; word-break: keep-all; overflow-wrap: anywhere; font-size: 13.5px; }
 .lmsh-ui .lmsh-dday { flex: none; width: 60px; text-align: center; font-weight: 800; font-size: 12px; border-radius: 6px; padding: 2px 0; margin-top: 1px; }
 .lmsh-ui .lmsh-dday.none { display: none; }
@@ -86,7 +95,7 @@
 .lmsh-ui .lmsh-course { background: var(--lmsh-panel); border: 1px solid var(--lmsh-line); border-radius: 6px; padding: 0 6px; color: var(--lmsh-text); }
 .lmsh-ui .lmsh-pager { display: flex; justify-content: center; gap: 4px; margin-top: 14px; }
 .lmsh-ui .lmsh-pager button { min-width: 32px; height: 32px; border: 1px solid var(--lmsh-line); background: #fff; border-radius: 8px; cursor: pointer; font-weight: 700; }
-.lmsh-ui .lmsh-pager button.on { background: var(--lmsh-accent); border-color: var(--lmsh-accent); color: #fff; }
+.lmsh-ui .lmsh-pager button.on { background: var(--lmsh-ink); border-color: var(--lmsh-ink); color: #fff; }
 .lmsh-ui .lmsh-pager button:disabled { opacity: .35; cursor: default; }
 
 /* 교안: 과목별 → 종류별 */
@@ -114,7 +123,7 @@
 .lmsh-ui .lmsh-label { font-weight: 700; display: block; margin-top: 4px; }
 .lmsh-ui .lmsh-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 8px; }
 .lmsh-ui .lmsh-chip { border: 1px solid var(--lmsh-line-strong); border-radius: 999px; padding: 3px 12px; background: #fff; cursor: pointer; font-weight: 600; }
-.lmsh-ui .lmsh-chip.on { border-color: var(--lmsh-accent); color: #fff; background: var(--lmsh-accent); }
+.lmsh-ui .lmsh-chip.on { border-color: var(--lmsh-ink); color: #fff; background: var(--lmsh-ink); }
 .lmsh-ui .lmsh-range { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
 .lmsh-ui .lmsh-num { width: 72px; border: 1px solid var(--lmsh-line-strong); border-radius: 8px; padding: 4px 8px; height: auto; }
 .lmsh-ui .lmsh-filter { min-width: 140px; max-width: 260px; padding: 5px 8px; font-weight: 600; }
