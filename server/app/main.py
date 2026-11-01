@@ -24,7 +24,7 @@ from .grading import GradeError, GradeResponse, GradeShortRequest, QuizResultReq
 from .quiz import QuizDocumentNotFound, QuizError, QuizInputError, QuizRequest, QuizResponse, generate_quiz
 from .report import ReportDocumentNotFound, ReportError, ReportResponse, get_report_builder
 from .layout_pdf import get_layout, save_original
-from .pdf import extract_pages
+from .pdf import PDFPasswordError, extract_pages, unlock_pdf
 from .notices import NoticeError, get_crawler
 from .notice_extract import ExtractRequest, get_extractor
 
@@ -92,15 +92,23 @@ def extract_notices(request: ExtractRequest) -> dict:
 
 
 @app.post("/documents")
-async def translate_document(file: UploadFile = File(...), lang: str = Form(...), course: str | None = Form(None)):
+async def translate_document(
+    file: UploadFile = File(...),
+    lang: str = Form(...),
+    course: str | None = Form(None),
+    password: str | None = Form(None),
+) -> dict:
     if course and not COURSE_RE.match(course):
         raise HTTPException(400, "course 형식 오류")
     try:
         data = await read_pdf(file)
+        data = await asyncio.to_thread(unlock_pdf, data, password)
         result = await asyncio.to_thread(service.translate_pdf, data, lang, course, llm())
         # PDF 보기(베타)용 원본 보관. 실제 PDF는 학생이 PDF 보기를 눌렀을 때만 만듦 (느리고 메모리를 많이 씀)
         await asyncio.to_thread(save_original, result['doc_id'], data)
         return result
+    except PDFPasswordError as e:
+        raise HTTPException(401, str(e)) from e
     except (ValueError, FileNotFoundError) as e:
         raise HTTPException(400, str(e))
     except httpx.HTTPError as e:

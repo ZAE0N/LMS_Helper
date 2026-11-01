@@ -32,7 +32,9 @@ LMS 페이지 ─ extension/content.js  (로그인 세션으로 Canvas API 읽�
 언어 코드: `en`(영어) · `ru`(러시아어) · `ja`(일본어, 필요 시 추가. MVP는 영어·러시아어만)
 
 ### 교안
-- `POST /documents` — multipart: `file`(PDF, **업로드 1회 최대 100MB**), `lang`, `course`(선택, 용어집 파일명)
+- `POST /documents` — multipart: `file`(PDF, **업로드 1회 최대 100MB**), `lang`, `course`(선택, 용어집 파일명), `password`(선택, PDF 열기 비밀번호)
+  - 열기 비밀번호가 필요한 PDF: 없으면 `401 {"detail": "PDF_PASSWORD_REQUIRED"}`, 틀리면 `401 {"detail": "PDF_PASSWORD_WRONG"}`
+  - 비밀번호는 메모리에서만 사용하며 로그·파일·오류 문구에 남기지 않는다. 잠금을 푼 사본으로 번역·페이지 그림·원본 보관을 처리한다. 복사·인쇄만 제한된 PDF는 비밀번호 없이 처리한다.
   → `{doc_id, lang, course, needs_review[], issue_pages[], pages: [{page, original, translated, terms[], issues[], size, image, background?, blocks[]}]}`
   - `original`은 띄어쓰기를 되살린 페이지 글 (챗봇·복습에 사용), `translated`는 페이지 전체 번역
   - **슬라이드 보기**: 확장은 `background`(번역할 글자를 지운 페이지 그림) 위 같은 자리에 블록의 `translated`를 올려 원본 모양을 유지. `size`: `[폭, 높이]`(pt), `image`: 원본 페이지 그림
