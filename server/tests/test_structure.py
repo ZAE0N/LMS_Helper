@@ -129,17 +129,43 @@ def test_broken_markers_fall_back_to_page_translation(setup, monkeypatch):
     assert page['image'] and 'background' not in page  # 원본 페이지 + 페이지 전체 번역
 
 
-def photo_pdf() -> bytes:
+def photo_pdf(color: tuple[int, int, int] = (120, 180, 240)) -> bytes:
     """통째로 붙인 그림(파란 바탕) 하나가 있는 슬라이드"""
     doc = pymupdf.open()
     page = doc.new_page(width=720, height=540)
     page.insert_text((300, 60), '거래 구조', fontname='korea', fontsize=30)
     pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 200, 120), False)
-    pix.set_rect(pix.irect, (120, 180, 240))
+    pix.set_rect(pix.irect, color)
     page.insert_image(pymupdf.Rect(200, 150, 520, 350), pixmap=pix, keep_proportion=False)
     data = doc.tobytes()
     doc.close()
     return data
+
+
+def test_same_text_with_different_images_uses_distinct_documents_but_reuses_translation(setup, monkeypatch):
+    calls = []
+    translate = fake_translate()
+
+    def record(*args):
+        calls.append(args[0])
+        return translate(*args)
+
+    monkeypatch.setattr(service, 'translate_page', record)
+    first = setup.post('/documents', files={'file': ('a.pdf', photo_pdf())}, data={'lang': 'ru'}).json()
+    second = setup.post('/documents', files={'file': ('b.pdf', photo_pdf((240, 100, 100)))}, data={'lang': 'ru'}).json()
+    assert first['pages'][0]['original'] == second['pages'][0]['original']
+    assert first['doc_id'] != second['doc_id'] and len(calls) == 1
+    images = [(service.figures_dir(d['doc_id']) / d['pages'][0]['image']).read_bytes() for d in (first, second)]
+    assert images[0] != images[1]
+
+
+def test_document_cache_is_invalidated_when_translation_prompt_changes(setup, monkeypatch):
+    monkeypatch.setattr(service, 'translate_page', fake_translate())
+    data = slide_pdf()
+    first = service.translate_pdf(data, 'ru', None, object())
+    monkeypatch.setattr(service, 'PROMPT_VERSION', service.PROMPT_VERSION + '-new')
+    second = service.translate_pdf(data, 'ru', None, object())
+    assert first['doc_id'] != second['doc_id']
 
 
 class FakeOcr:

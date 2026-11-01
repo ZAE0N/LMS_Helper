@@ -49,9 +49,9 @@ uvicorn app.main:app --port 8000
 ## API
 | 메서드 | 경로 | 입력 | 출력 |
 |---|---|---|---|
-| POST | `/documents` | `file`(PDF), `lang`, `course`(선택) | `doc_id`, `pages[] {page, original, translated, terms, issues}`, `issue_pages`, `needs_review` |
+| POST | `/documents` | `file`(PDF), `lang`, `course`(선택), `password`(선택) | `doc_id`, `pages[] {page, original, translated, terms, issues}`, `issue_pages`, `needs_review` |
 | GET | `/documents/{doc_id}` | | 저장된 결과 |
-| GET | `/documents/{doc_id}/figures/{image}` | | 교재 보기용 그림·도표 PNG |
+| GET | `/documents/{doc_id}/figures/{image}` | | 원본 페이지·번역용 배경 JPEG |
 | GET | `/documents/{doc_id}/pdf` | | 모양 유지 번역 PDF (준비 중이면 202 `{status: processing}`) |
 | POST | `/glossary/candidates` | `file`, `use_llm` | 검수용 용어 후보 |
 | GET | `/notices` | `source=school 또는 dept`, `limit=1~30` (기본 10), `page>=1` | `items`, `page`, `has_more` |
@@ -61,6 +61,12 @@ uvicorn app.main:app --port 8000
 | POST | `/quiz/grade-short` | `lang`, `quiz_id`, `question_id`, `user_answer` | `is_correct`, `score=0~100`, `reason_tr` |
 | POST | `/quiz/result` | `anon_id`, `quiz_id`, `answers[{id, correct}]` | `score` (맞힌 문제 수), `total` |
 | GET | `/report` | `anon_id`, `lang=en 또는 ru`, `doc_id` (선택) | 학습 통계, 약한 페이지, `exam_points`, `summary_tr` |
+
+### 비밀번호 PDF
+- 열기 비밀번호가 없으면 `401 {"detail": "PDF_PASSWORD_REQUIRED"}`, 틀리면 `401 {"detail": "PDF_PASSWORD_WRONG"}`. 확장은 비밀번호를 입력받아 같은 PDF와 `password`를 multipart로 다시 전송한다.
+- 맞으면 메모리에서 잠금을 푼 사본을 번역·OCR·페이지 그림·`data/originals/` 보관에 사용한다. 비밀번호는 LLM·로그·파일·오류 문구에 넣지 않는다. 복사·인쇄만 제한된 PDF는 비밀번호 없이 동작한다.
+- 문서 캐시는 PDF 바이트·언어·과목·용어집·구조 및 번역 프롬프트 버전으로 구분한다. 글이 같아도 그림·배치가 다른 파일은 다른 `doc_id`를 사용하며 페이지 번역은 재사용한다. 기존 ID의 자료·학습 기록은 유지하고 새 키를 적용하려면 PDF를 다시 전송한다.
+- 확인: `python -m pytest -q tests/test_documents_password.py tests/test_structure.py` (가짜 LLM).
 
 ## 학습 리포트
 - 통계는 SQLite만 사용: 완료한 시험 수, 전체 문항 기준 정답률, 유형별 정답률, 성공한 질문 수, 오답 페이지. 시험별 정답률의 단순 평균이 아님.

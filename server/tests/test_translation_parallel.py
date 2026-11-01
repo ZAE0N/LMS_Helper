@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Lock
 
 import httpx
+import pymupdf
 import pytest
 
 from app import main, service
@@ -92,9 +93,13 @@ def test_document_translation_does_not_block_async_health(monkeypatch):
         return {'doc_id': 'a' * 64, 'pages': []}
     monkeypatch.setattr(service, 'translate_pdf', slow)
     monkeypatch.setattr(main, 'llm', lambda: object())
+    monkeypatch.setattr(main, 'save_original', lambda *_: None)
+    with pymupdf.open() as doc:
+        doc.new_page()
+        data = doc.tobytes()
     async def run():
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url='http://test') as client:
-            task = asyncio.create_task(client.post('/documents', files={'file': ('a.pdf', b'%PDF- fake')}, data={'lang': 'ru'}))
+            task = asyncio.create_task(client.post('/documents', files={'file': ('a.pdf', data)}, data={'lang': 'ru'}))
             try:
                 assert await asyncio.to_thread(entered.wait, 2)
                 health = await asyncio.wait_for(client.get('/health'), timeout=1)

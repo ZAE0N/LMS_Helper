@@ -86,7 +86,8 @@ def test_korean_term_boundaries(terms):
 
 def test_translate_pdf_keeps_code_and_terms(terms):
     llm = FakeLLM()
-    r = service.translate_pdf(make_pdf(PAGE1, PAGE2), "en", "secure-coding", llm)
+    pdf = make_pdf(PAGE1, PAGE2)
+    r = service.translate_pdf(pdf, "en", "secure-coding", llm)
     p1, p2 = r["pages"]
     assert r["issue_pages"] == []
     assert CODE in p1["translated"]
@@ -97,7 +98,7 @@ def test_translate_pdf_keeps_code_and_terms(terms):
     assert "absence report (결석계)" in p2["translated"]
 
     before = llm.calls
-    assert service.translate_pdf(make_pdf(PAGE1, PAGE2), "en", "secure-coding", llm)["doc_id"] == r["doc_id"]
+    assert service.translate_pdf(pdf, "en", "secure-coding", llm)["doc_id"] == r["doc_id"]
     assert llm.calls == before  # 캐시
 
 

@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -41,8 +42,8 @@ def translate_pdf(data: bytes, lang: str, course: str | None, llm: LLM, *, worke
     pages_cache = Cache(DATA_DIR / "pages")
 
     extracted = analyze_pdf(data)
-    # 바이트가 아니라 내용 기준 (같은 교안을 다시 내보내도 재사용)
-    doc_id = Cache.key(*(p["text"] for p in extracted), lang, gver, STRUCTURE_VERSION)
+    # 그림·배치도 문서마다 다름. 같은 글의 번역은 아래 페이지 캐시로 재사용.
+    doc_id = Cache.key(hashlib.sha256(data).hexdigest(), lang, course or "", gver, STRUCTURE_VERSION, PROMPT_VERSION)
 
     def process_page(p: dict) -> dict:
         blocks = copy.deepcopy(p["blocks"])
