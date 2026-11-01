@@ -371,6 +371,15 @@ def page_blocks(page: pymupdf.Page, template: Template | None = None) -> tuple[l
     items, split = _columns(items, width, height)
 
     walls, fills = _walls(page)
+    small = [pymupdf.Rect(i['bbox']) for i in page.get_image_info() if pymupdf.Rect(i['bbox']).height < 40]
+
+    def inline(it: dict) -> bool:
+        """같은 줄 바로 옆에 다른 글·글자 그림(링크 등)이 붙어 있는 줄. 윗줄에 합치면 옆 글과 겹침"""
+        r = it['rect']
+        near = lambda o: min(abs(o.x0 - r.x1), abs(r.x0 - o.x1)) < it['size'] * 2  # noqa: E731
+        return any(o is not it and o['type'] == 'text' and abs(o['y'] - it['y']) < 4 and near(o['rect']) for o in items) \
+            or any(o.y0 < r.y1 and o.y1 > r.y0 and near(o) for o in small)
+
     merged: list[dict] = []
     for it in items:
         last = merged[-1] if merged else None
@@ -384,7 +393,8 @@ def page_blocks(page: pymupdf.Page, template: Template | None = None) -> tuple[l
                 if m['type'] != 'text' or m['mono'] or abs(it['size'] - m['size']) >= 1:
                     continue
                 same_line = m is last and abs(it['y'] - m['y']) < 4 and it['rect'].x0 - m['rect'].x1 < m['size'] * 2
-                follows = 0 < it['y'] - m['last_y'] < m['size'] * 1.6 and m['x'] - 2 <= it['x'] < m['rect'].x1
+                follows = 0 < it['y'] - m['last_y'] < m['size'] * 1.6 and m['x'] - 2 <= it['x'] < m['rect'].x1 \
+                    and not inline(it)
                 if (same_line or follows) and not _between(m['rect'], it['rect'], _visible_walls(it['rect'], walls, fills, *m['lines'])):
                     prev, join = m, ' '
                     break
