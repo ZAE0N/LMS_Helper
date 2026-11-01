@@ -15,15 +15,38 @@ const DocView = (() => {
 
   const imageUrl = (doc, name) => `${CONFIG.SERVER_URL}/documents/${doc.doc_id}/figures/${name}`;
 
-  // 번역문이 자리(box)에 맞을 때까지 글자를 줄임 (최소 원래 크기의 45%)
-  function fit(el, size) {
+  // 번역문이 자리(box)에 맞을 때까지 글자를 줄임. 화면에서 MIN_PX보다 작게는 줄이지 않음
+  // 그래도 넘치면 칸 안에서 자르고, 마우스를 올리거나 Tab으로 고르면 전체 문장을 보여 줌
+  const MIN_PX = 11;
+  function fit(el, size, scale = 1, code = false) {
+    const min = MIN_PX / scale;
+    let s = code ? size : Math.max(size, min); // 원래 작은 글도 최소 크기까지 키움 (코드 줄은 그대로)
+    el.style.fontSize = `${s}px`;
+    el.style.height = el.style.getPropertyValue('--h');
+    el.style.marginTop = '';
+    el.classList.remove('squeeze', 'more');
+    el.removeAttribute('tabindex');
+    el.removeAttribute('title');
     const over = () => el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1;
-    let s = size;
-    while (s > size * 0.45 && over()) {
-      s *= 0.92;
+    const floor = code ? Math.min(size, Math.max(size * 0.45, min)) : Math.max(size * 0.45, min);
+    while (s > floor && over()) {
+      s = Math.max(floor, s * 0.92);
       el.style.fontSize = `${s}px`;
     }
-    if (over()) el.classList.add('squeeze'); // 그래도 넘치면 긴 낱말도 줄바꿈
+    if (!over()) return;
+    el.classList.add('squeeze'); // 긴 낱말도 줄바꿈
+    if (!over()) return;
+    el.classList.add('more');
+    const lines = Math.max(1, Math.floor(el.clientHeight / (s * 1.15)));
+    el.style.setProperty('--lines', lines);
+    el.style.setProperty('--clip', `${lines * s * 1.15 + 1}px`);
+    const need = lines * s * 1.15 + 1 - el.clientHeight;
+    if (need > 0) { // 한 줄도 안 들어가는 낮은 칸: 위아래로 조금 넓혀 글자가 잘리지 않게
+      el.style.height = `${el.clientHeight + need}px`;
+      el.style.marginTop = `${-need / 2}px`;
+    }
+    el.tabIndex = 0;
+    el.title = el.textContent;
   }
 
   // 서버 그림을 잠깐 못 받으면 두 번 더 시도
@@ -52,15 +75,18 @@ const DocView = (() => {
         const [x0, y0, x1, y1] = b.box;
         const el = h('div', {
           class: `ov ${b.type} ${b.align || 'left'}${b.type === 'label' && !b.wrap ? ' nowrap' : ''}${b.ocr ? ' ocr' : ''}`,
-          style: `left:${x0}px;top:${y0}px;width:${x1 - x0}px;height:${y1 - y0}px;font-size:${b.size}px;` +
+          style: `left:${x0}px;top:${y0}px;width:${x1 - x0}px;height:${y1 - y0}px;--h:${y1 - y0}px;font-size:${b.size}px;` +
             `color:${b.color || '#000'};font-weight:${b.bold ? 700 : 400}`,
         }, clean(b.translated));
         inner.append(el);
-        boxes.push([el, b.size]);
+        boxes.push([el, b.size, b.type === 'codeline' || b.type === 'comment']);
       }
     }
     const box = h('div', { class: 'slide', 'data-w': w, 'data-h': h0, 'data-err': App.t.imageError }, inner);
-    box.fitText = () => boxes.forEach(([el, size]) => fit(el, size));
+    box.fitText = () => {
+      const scale = Number(/scale\(([\d.]+)\)/.exec(inner.style.transform)?.[1]) || 1;
+      boxes.forEach(([el, size, code]) => fit(el, size, scale, code));
+    };
     return box;
   }
 
@@ -242,6 +268,7 @@ const DocView = (() => {
         el.style.width = `${w * scale}px`;
         el.style.height = `${hh * scale}px`;
         el.firstChild.style.transform = `scale(${scale})`;
+        el.fitText();
       }
     }
 
@@ -272,7 +299,6 @@ const DocView = (() => {
       stage.replaceChildren(h('div', { class: 'slides' }, shown), ...(fallback ? [h('div', { class: 'page-text' },
         h('p', { class: 'muted' }, t.pageTextNote), Object.assign(h('div', { class: 'text' }), { textContent: clean(p.translated) }))] : []));
       layout();
-      shown.forEach(el => el.fitText());
       // 다음 페이지 그림 미리 받기
       const n = pages[current + 1];
       if (n?.image) [n.image, n.background].filter(Boolean).forEach(x => (new Image().src = imageUrl(doc, x)));

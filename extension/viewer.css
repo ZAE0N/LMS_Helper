@@ -80,6 +80,10 @@ main { flex: 1; min-height: 0; }
 .ov { position: absolute; overflow: hidden; line-height: 1.15; white-space: pre-wrap; overflow-wrap: normal; word-break: normal;
   font-family: "Segoe UI", "Malgun Gothic", Arial, sans-serif; }
 .ov.squeeze { overflow-wrap: anywhere; }
+/* 최소 크기로도 칸에 안 들어가는 번역문: 칸 안에서 자르고, 마우스·Tab으로 전체 보기 */
+.ov.more { cursor: help; max-height: var(--clip); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--lines); white-space: normal; }
+.ov.more:hover, .ov.more:focus { display: block; -webkit-line-clamp: none; max-height: none; overflow: visible; height: auto !important; min-height: var(--h); z-index: 5; outline: 2px solid var(--accent);
+  background: #fff; color: var(--text) !important; box-shadow: 0 6px 18px rgba(16, 24, 40, .25); white-space: pre-wrap; }
 .ov.label, .ov.center { display: flex; align-items: center; }
 .ov.center { justify-content: center; text-align: center; }
 .ov.center:not(.label) { align-items: flex-start; }
