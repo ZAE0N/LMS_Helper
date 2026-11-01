@@ -70,7 +70,7 @@
 .lmsh-ui .lmsh-btn.wide { width: 100%; padding: 9px; margin: 8px 0 10px; }
 .lmsh-ui .lmsh-btn:disabled { opacity: .5; cursor: default; }
 
-/* 알림: 행 하나 = 링크 (D-day | 제목 전체 | 과목·날짜) */
+/* 공지: 행 하나 = 링크 (D-day | 제목 전체 | 과목·날짜) */
 .lmsh-ui .lmsh-list { display: flex; flex-direction: column; gap: 6px; }
 .lmsh-ui .lmsh-notice { display: flex; align-items: flex-start; gap: 12px; padding: 10px 12px; border: 1px solid var(--lmsh-line); border-radius: 10px;
   text-decoration: none; color: var(--lmsh-text); background: #fff; }

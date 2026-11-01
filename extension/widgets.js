@@ -1,10 +1,10 @@
-// LMS 모든 페이지 오른쪽 끝의 서랍 패널 (알림·교안·복습). 문구는 한국어, 번역은 크롬 번역이 함
+// LMS 모든 페이지 오른쪽 끝의 서랍 패널 (공지·교안·복습). 문구는 한국어, 번역은 크롬 번역이 함
 (() => {
   if (window !== top || QUIZ_PATH.test(location.pathname)) return;
 
   const KO = {
     brand: 'LMS Helper',
-    tabs: { notices: '알림', materials: '교안', review: '복습' },
+    tabs: { notices: '공지', materials: '교안', review: '복습' },
     allCourses: '전체 과목',
     allCategories: '전체 분류',
     pager: '쪽 이동',
@@ -148,7 +148,7 @@
   const viewerUrl = (f, extra = {}) =>
     `viewer.html?${new URLSearchParams({ file: f.id, course: f.courseId, name: f.name, courseName: f.course, ...extra })}`;
 
-  // ---------- 탭: 알림 ----------
+  // ---------- 탭: 공지 ----------
   // 학교·학과 홈페이지처럼 한 쪽에 10개, 쪽 번호로 이동. 누르면 새 탭에서 원문
   const PAGE_SIZE = 10;
   function noticesTab() {
