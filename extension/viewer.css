@@ -102,15 +102,15 @@ mark { background: linear-gradient(transparent 52%, var(--hl) 52%); color: inher
 .slide.img-failed::after { content: attr(data-err); position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; text-align: center; color: var(--bad); font-size: 14px; }
 .ov { position: absolute; overflow: hidden; line-height: 1.15; white-space: pre-wrap; overflow-wrap: normal; word-break: normal; font-family: var(--font); }
 .ov.squeeze { overflow-wrap: anywhere; }
-/* 최소 크기로도 칸에 안 들어가는 번역문: 칸 안에서 자르고, 마우스·Tab으로 전체 보기 */
-.ov.more { cursor: help; max-height: var(--clip); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--lines); white-space: normal; }
-.ov.more:hover, .ov.more:focus { display: block; -webkit-line-clamp: none; max-height: none; overflow: visible; height: auto !important; min-height: var(--h); z-index: 5;
-  outline: 2px solid var(--ink); background: #fff; color: var(--text) !important; box-shadow: 0 6px 18px rgba(27, 42, 74, .25); white-space: pre-wrap; }
 .ov.label, .ov.center { display: flex; align-items: center; }
 .ov.center { justify-content: center; text-align: center; }
 .ov.center:not(.label) { align-items: flex-start; }
 .ov.nowrap, .ov.ocr { white-space: nowrap; }
 .ov.comment, .ov.codeline { display: flex; align-items: center; line-height: 1.05; white-space: pre; font-family: Consolas, "D2Coding", monospace; }
+/* 최소 크기로도 칸에 안 들어가는 번역문: 칸 안에서 자르고, 마우스·Tab으로 전체 보기 (그림 속 글자·한 줄 글자도. 그래서 위 규칙들 뒤에 둠) */
+.ov.more { cursor: help; max-height: var(--clip); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--lines); white-space: normal; overflow-wrap: break-word; }
+.ov.more:hover, .ov.more:focus { display: block; -webkit-line-clamp: none; max-height: none; overflow: visible; height: auto !important; min-height: var(--h); z-index: 5;
+  outline: 2px solid var(--ink); background: #fff; color: var(--text) !important; box-shadow: 0 6px 18px rgba(27, 42, 74, .25); white-space: pre-wrap; }
 .page-text { max-width: 900px; margin: 0 auto 16px; padding: 14px 18px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column; gap: 6px; }
 .stage.text { padding: 16px 20px; }
 .cols { display: grid; gap: 14px; }

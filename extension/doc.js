@@ -17,7 +17,7 @@ const DocView = (() => {
 
   // 번역문이 자리(box)에 맞을 때까지 글자를 줄임. 화면에서 MIN_PX보다 작게는 줄이지 않음
   // 그래도 넘치면 칸 안에서 자르고, 마우스를 올리거나 Tab으로 고르면 전체 문장을 보여 줌
-  const MIN_PX = 11;
+  const MIN_PX = 10;
   function fit(el, size, scale = 1, code = false) {
     const min = MIN_PX / scale;
     let s = code ? size : Math.max(size, min); // 원래 작은 글도 최소 크기까지 키움 (코드 줄은 그대로)
@@ -84,7 +84,7 @@ const DocView = (() => {
     }
     const box = h('div', { class: 'slide', 'data-w': w, 'data-h': h0, 'data-err': App.t.imageError }, inner);
     box.fitText = () => {
-      const scale = Number(/scale\(([\d.]+)\)/.exec(inner.style.transform)?.[1]) || 1;
+      const scale = Number(/scale\(([\d.]+)\)/.exec(inner.style.transform)?.[1]) || Number(inner.style.zoom) || 1;
       boxes.forEach(([el, size, code]) => fit(el, size, scale, code));
     };
     return box;
@@ -130,7 +130,7 @@ const DocView = (() => {
       const scale = Math.min(PRINT.w / w, PRINT.h / hh);
       el.style.width = `${w * scale}px`;
       el.style.height = `${hh * scale}px`;
-      el.firstChild.style.transform = `scale(${scale})`;
+      el.firstChild.style.zoom = scale; // 인쇄는 zoom: transform이면 크롬이 페이지를 넓게 보고 전체를 줄임
     }
     slides.forEach(el => el.fitText());
     const imgs = [...root.querySelectorAll('img')];
