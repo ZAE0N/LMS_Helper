@@ -33,20 +33,20 @@ LMS 페이지 ─ extension/content.js  (로그인 세션으로 Canvas API 읽�
 
 ### 교안
 - `POST /documents` — multipart: `file`(PDF, **업로드 1회 최대 100MB**), `lang`, `course`(선택, 용어집 파일명)
-  → `{doc_id, lang, course, needs_review[], issue_pages[], pages: [{page, original, translated, terms[], issues[], blocks[]}]}`
-  - `original`은 띄어쓰기를 되살린 페이지 글 (챗봇·복습에 사용)
-  - `blocks` (교재 보기): `[{type: heading|bullet|text|code|image, level: 0~3, text, translated}]`
-    - 모든 페이지에 반복되는 머리·꼬리 장식(로고, 학교명, 과목명)은 뺌. 제목은 페이지의 대표 제목
-    - 글 덩어리와 그림 속 글자는 페이지마다 한 번에 용어집 파이프라인으로 번역. 덩어리별로 맞지 않으면 그 페이지 블록에 `translated`가 없음 → 확장은 페이지 전체 번역으로 표시
-    - 주소·숫자만 있는 줄은 원문, 코드는 `translated` 없음(원문 표시)
-    - 그림: `{type: image, image, translated_image?, width(페이지 폭 대비 0~1), raster, labels[{text, translated, rect}], legend?[{source, translated}]}`
-      - 도형으로 그린 그림: 글자를 번역해 같은 자리에 다시 그린 `translated_image`(PNG)
-      - 통째로 붙인 그림(raster): GPT가 그림을 읽고 번역 글자로 다시 그린 `translated_image`(SVG, 허용 태그만) + `legend`(그림 속 글자 번역). 다시 그리기 어려우면 `legend`만
+  → `{doc_id, lang, course, needs_review[], issue_pages[], pages: [{page, original, translated, terms[], issues[], size, image, background?, blocks[]}]}`
+  - `original`은 띄어쓰기를 되살린 페이지 글 (챗봇·복습에 사용), `translated`는 페이지 전체 번역
+  - **슬라이드 보기**: 확장은 `background`(번역할 글자를 지운 페이지 그림) 위 같은 자리에 블록의 `translated`를 올려 원본 모양을 유지. `size`: `[폭, 높이]`(pt), `image`: 원본 페이지 그림
+  - `blocks`: `[{type, level: 0~3, text, translated?, rect, box, size, color, bold, align?, ocr?}]` (좌표는 pt, `[x0, y0, x1, y1]`)
+    - `type`: `heading` · `bullet` · `text` · `code` · `label`(그림 속 글자) · `comment`(코드 속 한글 주석)
+    - `rect`: 원문 위치, `box`: 번역문이 들어갈 자리(번역문이 길면 확장이 글자를 줄임), `align: center`면 가운데 정렬
+    - 페이지마다 한 번에 용어집 파이프라인으로 번역. 덩어리별로 맞지 않으면 블록에 `translated`가 없고 `background`도 없음 → 확장은 원본 페이지 + 페이지 전체 번역
+    - 주소·숫자만 있는 줄, 번역해도 같은 글은 원문 그대로(지우지 않음). 코드는 번역하지 않고 한글 주석만 `comment`로 번역
+    - 통째로 붙인 그림(사진·캡처) 속 한글은 OCR로 찾아 `label`(`ocr: true`)로 번역하고, 배경에서는 그 자리를 둘레 색으로 덮음 (OCR이 안 되면 그림은 원본)
+    - 머리·꼬리 장식(로고, 학교명, 과목명)은 번역하지 않고 그대로 둠. 여러 페이지에 반복되는 단원 제목은 번역
 - `GET /documents/{doc_id}` → 위와 동일
-- `GET /documents/{doc_id}/figures/{image}` → 그림·도표 (PNG 또는 SVG)
-- `GET /documents/{doc_id}/pdf` → 모양을 유지한 번역 PDF (베타, `application/pdf`). 아직 만드는 중이면 `202 {"status": "processing"}`, 기능 꺼짐 503, 원본 없음 404
+- `GET /documents/{doc_id}/figures/{name}` → 페이지 그림 (`{page}.jpg` 원본, `{page}-bg.jpg` 배경, JPEG)
+- `GET /documents/{doc_id}/pdf` → 모양을 유지한 번역 PDF (베타, 확장에서는 숨김). 아직 만드는 중이면 `202 {"status": "processing"}`, 기능 꺼짐 503, 원본 없음 404
   - 처음 요청할 때 만들기 시작하고, 교안마다 한 번만 만들어 저장해 모두 같은 파일을 받는다 (매번 다시 번역하지 않음)
-- 그림 속 글자: 도형 그림은 자리에 번역, 통째로 붙인 그림은 GPT가 다시 그리거나 번역 목록 (위 `blocks` 참고)
 
 ### 공지 (v3: 번역 없음, 한국어 그대로. 번역은 크롬 번역이 담당)
 LMS 페이지 오른쪽 서랍의 알림 탭: **수업**(LMS 강의 공지) · **학교** · **학과**
