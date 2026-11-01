@@ -36,9 +36,9 @@ LMS 페이지 ─ extension/content.js  (로그인 세션으로 Canvas API 읽�
   → `{doc_id, lang, course, needs_review[], issue_pages[], pages: [{page, original, translated, terms[], issues[], size, image, background?, blocks[]}]}`
   - `original`은 띄어쓰기를 되살린 페이지 글 (챗봇·복습에 사용), `translated`는 페이지 전체 번역
   - **슬라이드 보기**: 확장은 `background`(번역할 글자를 지운 페이지 그림) 위 같은 자리에 블록의 `translated`를 올려 원본 모양을 유지. `size`: `[폭, 높이]`(pt), `image`: 원본 페이지 그림
-  - `blocks`: `[{type, level: 0~3, text, translated?, rect, box, size, color, bold, align?, ocr?}]` (좌표는 pt, `[x0, y0, x1, y1]`)
+  - `blocks`: `[{type, level: 0~3, text, translated?, rect, box, size, color, bold, align?, wrap?, ocr?}]` (좌표는 pt, `[x0, y0, x1, y1]`)
     - `type`: `heading` · `bullet` · `text` · `code` · `label`(그림 속 글자) · `comment`(코드 속 한글 주석)
-    - `rect`: 원문 위치, `box`: 번역문이 들어갈 자리(번역문이 길면 확장이 글자를 줄임), `align: center`면 가운데 정렬
+    - `rect`: 원문 위치, `box`: 번역문이 들어갈 자리(번역문이 길면 확장이 글자를 줄임), `align`: `center`·`left`(없으면 왼쪽), `wrap: false`인 그림 속 글자는 한 줄로(넘치면 글자를 줄임)
     - 페이지마다 한 번에 용어집 파이프라인으로 번역. 덩어리별로 맞지 않으면 블록에 `translated`가 없고 `background`도 없음 → 확장은 원본 페이지 + 페이지 전체 번역
     - 주소·숫자만 있는 줄, 번역해도 같은 글은 원문 그대로(지우지 않음). 코드는 번역하지 않고 한글 주석만 `comment`로 번역
     - 통째로 붙인 그림(사진·캡처) 속 한글은 OCR로 찾아 `label`(`ocr: true`)로 번역하고, 배경에서는 그 자리를 둘레 색으로 덮음 (OCR이 안 되면 그림은 원본)
