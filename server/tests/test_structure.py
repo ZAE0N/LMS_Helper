@@ -285,3 +285,45 @@ def test_korean_keeps_original_without_calling_llm(setup, monkeypatch):
     assert doc['lang'] == 'ko' and page['translated'] == page['original'] and 'background' not in page
     assert all('translated' not in b for b in page['blocks'])
     assert client.get(f"/documents/{doc['doc_id']}/figures/{page['image']}").status_code == 200
+
+
+def test_table_drawn_with_lines_keeps_each_cell_separate_and_inside():
+    doc = pymupdf.open()
+    page = doc.new_page(width=960, height=540)
+    xs, ys = [60, 230, 560, 900], [110, 150, 210, 270]
+    shape = page.new_shape()  # 표 선 전체를 한 경로로 그림 (PPT 표에서 흔함)
+    for x in xs:
+        shape.draw_line((x, ys[0]), (x, ys[-1]))
+    for y in ys:
+        shape.draw_line((xs[0], y), (xs[-1], y))
+    shape.finish(color=(0, 0, 0), width=0.8)
+    shape.commit()
+    rows = [['방법', '설명', '주의할 점'], ['결측치 제거', '빈 행을 삭제한다', '데이터가 줄어듦'], ['평균 대체', '평균으로 채운다', '분산이 작아짐']]
+    for i, row in enumerate(rows):
+        for j, text in enumerate(row):
+            page.insert_text((xs[j] + 8, ys[i] + 26), text, fontname='korea', fontsize=13)
+    blocks = analyze_pdf(doc.tobytes())[0]['blocks']
+    for i, row in enumerate(rows):
+        for j, text in enumerate(row):
+            b = next(b for b in blocks if b['text'] == text)  # 같은 줄의 칸끼리 합치지 않음
+            assert xs[j] <= b['box'][0] and b['box'][2] <= xs[j + 1]
+            assert b['box'][3] <= ys[i + 1]
+
+
+def test_card_text_stays_in_its_card_and_line_behind_cards_is_ignored():
+    doc = pymupdf.open()
+    page = doc.new_page(width=960, height=540)
+    page.draw_line((40, 300), (920, 300), color=(0.6, 0.6, 0.6), width=2)  # 카드 뒤를 지나는 선
+    for k, (head, body) in enumerate([('1단계 수집', '자료를 모은다'), ('2단계 정제', '결측치를 처리한다'), ('3단계 분석', '패턴을 찾는다')]):
+        x0 = 70 + k * 290
+        page.draw_rect(pymupdf.Rect(x0, 130, x0 + 250, 420), color=(0.2, 0.3, 0.7), fill=(1, 1, 1))
+        page.draw_rect(pymupdf.Rect(x0, 130, x0 + 250, 180), color=None, fill=(0.2, 0.3, 0.7))
+        page.insert_text((x0 + 16, 163), head, fontname='korea', fontsize=18, color=(1, 1, 1))
+        page.insert_text((x0 + 16, 220), body, fontname='korea', fontsize=14)
+    blocks = analyze_pdf(doc.tobytes())[0]['blocks']
+    for k, (head, body) in enumerate([('1단계 수집', '자료를 모은다'), ('2단계 정제', '결측치를 처리한다'), ('3단계 분석', '패턴을 찾는다')]):
+        x0 = 70 + k * 290
+        h = next(b for b in blocks if b['text'] == head)  # 흰 글자는 색 띠 안에만 (밖으로 나가면 안 보임)
+        assert x0 <= h['box'][0] and h['box'][2] <= x0 + 250 and h['box'][3] <= 180
+        b = next(b for b in blocks if b['text'] == body)
+        assert b['box'][2] <= x0 + 250 and b['box'][3] > 300  # 카드 뒤의 선은 벽이 아님

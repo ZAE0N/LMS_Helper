@@ -14,7 +14,7 @@ from .translate import LANGS, PROMPT_VERSION, Cache, glossary_version, translate
 ROOT = Path(__file__).resolve().parent.parent
 GLOSSARY_DIR = Path(os.getenv("GLOSSARY_DIR", ROOT / "glossary"))
 DATA_DIR = Path(os.getenv("DATA_DIR", ROOT / "data"))
-STRUCTURE_VERSION = "slide-v5"  # 페이지 형식(blocks 등)을 바꾸면 올려서 교안을 새로 만들게 함
+STRUCTURE_VERSION = "slide-v6"  # 페이지 형식(blocks 등)을 바꾸면 올려서 교안을 새로 만들게 함
 _DOCUMENT_LOCKS = [Lock() for _ in range(64)]
 _PAGE_LOCKS = [Lock() for _ in range(64)]
 
