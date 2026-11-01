@@ -11,8 +11,8 @@ import pymupdf
 from .structure import _RENDER_LOCK, HANGUL, _r, label_box
 
 log = logging.getLogger(__name__)
-DPI = 200
-MIN_SCORE = 0.6
+DPI = 300  # 화면 캡처 속 작은 글자도 읽도록 크게
+MIN_SCORE = 0.5
 _lock = Lock()
 _engine = None
 _failed = False

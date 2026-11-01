@@ -20,7 +20,7 @@ INLINE = re.compile(
     r"""(
         `[^`\n]+`                                   # `code`
       | https?://[!-~]+                              # URL (ASCII까지만)
-      | \b[A-Za-z_][\w.]*\([^()\n]*\)               # func(), obj.method(x)
+      | \b[A-Za-z_][\w.]*\([^()\n가-힣]*\)          # func(), obj.method(x) (괄호 안에 한글이 있으면 설명이라 번역)
       | \b[a-z]+[A-Z]\w*\b                          # camelCase
       | \b[A-Z][a-z]+[A-Z]\w*\b                     # PascalCase 복합어
       | \b[a-z]+_[a-z_\d]+\b                        # snake_case

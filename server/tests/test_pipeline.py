@@ -193,3 +193,8 @@ def test_api(monkeypatch):
     assert c.post("/documents", files={"file": ("a.pdf", pdf)}, data={"lang": "en", "course": "../x"}).status_code == 400
     cands = c.post("/glossary/candidates", files={"file": ("a.pdf", pdf)}, data={"use_llm": "false"}).json()["terms"]
     assert any(t["term"] == "PreparedStatement" for t in cands)
+
+
+def test_parentheses_with_korean_are_explanation_not_code():
+    masked, saved = pr.protect("block.timestamp(블록 시간, 12초 간격)은 공개, counter.count() 호출")
+    assert "블록 시간" in masked and saved == ["counter.count()"]

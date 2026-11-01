@@ -37,7 +37,7 @@ Rules:
    no widely used {lang} name (people's names, Korean place or service names) exactly as written in Korean.
    If unsure, keep the Korean.
 5. Output only the translation."""
-PROMPT_VERSION = "p2"  # 위 규칙을 바꾸면 올려서 저장된 페이지 번역을 다시 만듦
+PROMPT_VERSION = "p3"  # 위 규칙을 바꾸면 올려서 저장된 페이지 번역을 다시 만듦
 
 USER = """Glossary:
 {glossary}

@@ -22,6 +22,35 @@ HANGUL = re.compile(r'[가-힣]')
 COMMENT = re.compile(r'(?<![:\w"\'])//+|(?<![\w&])#+(?![A-Za-z0-9_{])|/\*+|<!--|^\s*\*+(?!/)')
 COMMENT_END = re.compile(r'\s*(\*/|-->)\s*$')
 HANGUL_RUN = re.compile(r'[가-힣]+(?:[ \t]+[가-힣]+)*')
+STRING = re.compile(r'(["\'`])((?:\\.|(?!\1).)*)\1')
+HTML_TEXT = re.compile(r'>([^<>]+)(?=<|$)')
+
+
+def korean_spans(text: str, stop: int) -> list[tuple[int, int]]:
+    """코드 줄에서 번역할 한글 구간. 문자열은 따옴표 안 전체(영어 단어 포함, 문맥 유지),
+    문자열 속 HTML은 태그 사이 글만, HTML 글(>…<)은 태그 사이 전체, 나머지는 이어진 한글 덩어리"""
+    spans: list[tuple[int, int]] = []
+
+    def add(a: int, b: int) -> None:
+        part = text[a:b]
+        a, b = a + len(part) - len(part.lstrip()), b - len(part) + len(part.rstrip())
+        if b > a and HANGUL.search(text, a, b) and not any(a < y and x < b for x, y in spans):
+            spans.append((a, b))
+
+    for m in STRING.finditer(text, 0, stop):
+        a, b = m.start(2), m.end(2)
+        if not HANGUL.search(text, a, b):
+            continue
+        if '<' in m.group(2) and '>' in m.group(2):
+            for t in HTML_TEXT.finditer(text, a, b):
+                add(t.start(1), t.end(1))
+        else:
+            add(a, b)
+    for t in HTML_TEXT.finditer(text, 0, stop):
+        add(t.start(1), t.end(1))
+    for m in HANGUL_RUN.finditer(text, 0, stop):
+        add(m.start(), m.end())
+    return sorted(spans)
 URL = re.compile(r'https?://\S+|www\.\S+')
 TOP, BOTTOM = 0.15, 0.88  # 머리 장식 / 꼬리 장식 경계 (페이지 높이 비율)
 FOOTER = 0.9
@@ -136,7 +165,7 @@ def code_parts(text: str, boxes: list, base: dict) -> list[dict]:
         r = _union(boxes[c[1]:c[2]])
         out.append({**base, 'kind': 'comment', 'text': text[c[1]:c[2]].strip(), 'rect': r, 'lines': [r]})
     stop = c[0] if c else len(text)
-    runs = [(m.start(), m.end()) for m in HANGUL_RUN.finditer(text, 0, stop)]
+    runs = korean_spans(text, stop)
     for a, b in runs:
         r = _union(boxes[a:b])
         out.append({**base, 'kind': 'codetext', 'text': text[a:b], 'rect': r, 'lines': [r], 'line': line})
@@ -445,10 +474,10 @@ TRANSLATABLE = ('heading', 'bullet', 'text', 'label', 'comment', 'codetext')
 
 
 def units(blocks: list[dict]) -> list[tuple[int, str]]:
-    """번역 단위 (블록 번호, 글). 코드는 원문 유지 (한글 주석만 따로 번역)"""
+    """번역 단위 (블록 번호, 글). 코드는 원문 유지 (코드 속 한글만 따로 번역). 그림 속 글자는 한 글자(홀, 짝)도 번역"""
     return [(i, b['text']) for i, b in enumerate(blocks)
             if b['type'] in TRANSLATABLE and not b.get('code') and (needs_translation(b['text']) or
-                                                                    b['type'] == 'codetext' and HANGUL.search(b['text']))]
+                                                                    b['type'] in ('codetext', 'label') and HANGUL.search(b['text']))]
 
 
 def marked_text(blocks: list[dict]) -> str:

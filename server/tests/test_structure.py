@@ -160,7 +160,8 @@ def test_raster_figure_text_is_found_by_ocr_and_covered(setup, monkeypatch):
     labels = [b for b in page['blocks'] if b.get('ocr')]
     assert len(labels) == 1 and labels[0]['translated'] == 'RU:개인키'
     x0, y0, x1, y1 = labels[0]['rect']
-    assert abs(x0 - (200 + 40 * 72 / 200)) < 1 and abs(y1 - (150 + 100 * 72 / 200)) < 1  # 그림 픽셀 → 페이지 좌표
+    scale = 72 / figure_ocr.DPI
+    assert abs(x0 - (200 + 40 * scale)) < 1 and abs(y1 - (150 + 100 * scale)) < 1  # 그림 픽셀 → 페이지 좌표
     assert re.fullmatch(r'#[0-9a-f]{6}', labels[0]['color']) and 'fill' not in labels[0] and 'lines' not in labels[0]
     assert '개인키' not in page['original']  # 챗봇·문제용 글은 PDF 글자만
     background = client.get(f"/documents/{doc['doc_id']}/figures/{page['background']}")
@@ -203,12 +204,12 @@ def test_code_korean_runs_are_translated_and_line_is_rewritten():
     boxes = [(i * 6.0, 0, i * 6.0 + 6, 10) for i in range(len(text))]
     parts = code_parts(text, boxes, {'size': 10, 'color': '#000000', 'bold': False})
     kinds = [(p['kind'], p['text']) for p in parts]
-    assert kinds == [('comment', '주소 출력'), ('codetext', '서명 계정'), ('codeline', 'console.log("서명 계정:", a);')]
+    assert kinds == [('comment', '주소 출력'), ('codetext', '서명 계정:'), ('codeline', 'console.log("서명 계정:", a);')]
     line = parts[2]
-    blocks = [{'type': 'comment', 'text': '주소 출력'}, {'type': 'codetext', 'text': '서명 계정'},
+    blocks = [{'type': 'comment', 'text': '주소 출력'}, {'type': 'codetext', 'text': '서명 계정:'},
               {'type': 'codeline', 'text': line['text'], 'runs': line['runs'], 'parts': [1]}]
-    assert marked_text(blocks) == '⟦B0⟧ 주소 출력\n\n⟦B1⟧ 서명 계정'
-    assert apply_marked('⟦B0⟧ print address\n\n⟦B1⟧ Signer account', blocks)
+    assert marked_text(blocks) == '⟦B0⟧ 주소 출력\n\n⟦B1⟧ 서명 계정:'
+    assert apply_marked('⟦B0⟧ print address\n\n⟦B1⟧ Signer account:', blocks)
     assert blocks[2]['translated'] == 'console.log("Signer account:", a);'
     assert line['stop'] == text.index('//') * 6.0  # 다시 쓴 줄은 주석 앞에서 멈춤
 
@@ -229,3 +230,19 @@ def test_footer_is_translated_but_not_in_page_text_and_columns_do_not_overlap():
     assert footer['box'][2] < 660  # 쪽 번호를 덮지 않음
     left = next(b for b in p['blocks'] if b['text'] == '왼쪽 첫째 항목')
     assert left['box'][2] < 380  # 오른쪽 단의 글머리 기호 앞에서 멈춤
+
+
+def test_korean_in_code_keeps_context_of_strings_and_html():
+    from app.structure import korean_spans
+    def spans(t):
+        return [t[a:b] for a, b in korean_spans(t, len(t))]
+    assert spans('el.textContent = `chain ${id} 에 기록이 없음 → MetaMask에서 전환`;') == \
+        ['chain ${id} 에 기록이 없음 → MetaMask에서 전환']  # 문자열 전체 (영어 단어 포함)
+    assert spans('<button id="connectBtn">MetaMask 연결</button>') == ['MetaMask 연결']
+    assert spans('w(\'<p style="color:red">안내 문구</p>\')') == ['안내 문구']  # 문자열 속 HTML은 태그 사이만
+    assert spans('m.call(컨트랙트, "함수명", [인자])') == ['컨트랙트', '함수명', '인자']
+
+
+def test_single_korean_letter_in_figure_is_translated():
+    blocks = [{'type': 'label', 'text': '홀'}, {'type': 'bullet', 'text': '가'}, {'type': 'label', 'text': '7'}]
+    assert marked_text(blocks) == '⟦B0⟧ 홀'
