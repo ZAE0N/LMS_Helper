@@ -76,7 +76,7 @@ const DocView = (() => {
         const el = h('div', {
           class: `ov ${b.type} ${b.align || 'left'}${b.type === 'label' && !b.wrap ? ' nowrap' : ''}${b.ocr ? ' ocr' : ''}`,
           style: `left:${x0}px;top:${y0}px;width:${x1 - x0}px;height:${y1 - y0}px;--h:${y1 - y0}px;font-size:${b.size}px;` +
-            `color:${b.color || '#000'};font-weight:${b.bold ? 700 : 400}`,
+            `color:${b.color || '#000'};font-weight:${b.bold ? 700 : 400}${b.indent ? `;text-indent:${b.indent}px` : ''}`,
         }, clean(b.translated));
         inner.append(el);
         boxes.push([el, b.size, b.type === 'codeline' || b.type === 'comment']);
@@ -123,8 +123,13 @@ const DocView = (() => {
     const note = h('div', { class: 'print-note' });
     const root = h('div', { class: 'print-root', 'aria-hidden': 'true' });
     document.body.append(root, note);
-    const slides = doc.pages.filter(slideReady).map(p => slide(doc, p, translated && overlaid(p)));
-    root.append(...slides.map(el => h('div', { class: 'print-page' }, el)));
+    const ready = doc.pages.filter(slideReady);
+    const slides = ready.map(p => slide(doc, p, translated && overlaid(p)));
+    // 슬라이드에 올리지 못한 페이지는 다음 장에 페이지 전체 번역
+    root.append(...ready.flatMap((p, i) => [h('div', { class: 'print-page' }, slides[i]),
+      translated && !overlaid(p) && (p.translated || '').trim() ? h('div', { class: 'print-page print-text' },
+        h('p', { class: 'muted' }, `${t.pageNo(p.page)} · ${t.pageTextNote}`), Object.assign(h('div', { class: 'text' }), { textContent: clean(p.translated) })) : null]
+      .filter(Boolean)));
     for (const el of slides) {
       const w = Number(el.dataset.w), hh = Number(el.dataset.h);
       const scale = Math.min(PRINT.w / w, PRINT.h / hh);

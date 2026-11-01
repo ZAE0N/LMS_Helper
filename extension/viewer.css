@@ -231,6 +231,8 @@ button.warn-badge { border: 0; padding: 0; cursor: pointer; }
   .print-page { break-after: page; display: flex; justify-content: center; }
   .print-page:last-child { break-after: auto; }
   .print-page .slide { box-shadow: none; border-radius: 0; }
+  .print-text { display: block; max-width: 1000px; margin: 0 auto; font-size: 14px; line-height: 1.6; }
+  .print-text .muted { margin-bottom: 10px; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 @media (prefers-reduced-motion: reduce) {
