@@ -3,7 +3,7 @@ const CONFIG = {
   SERVER_URL: 'http://localhost:8000',
   LMS_ORIGIN: 'https://lms-app.inhatc.ac.kr',
   // 서버에 아직 없는 기능은 가짜 응답(true). 서버가 준비되면 false로
-  MOCK_API: { notices: false, chat: true, quiz: true, report: true },
+  MOCK_API: { notices: false, chat: false, quiz: false, report: false },
   // LMS 과목명(짧은 이름) → 서버 용어집 파일명 (server/glossary/<이름>.json)
   GLOSSARY: { '시큐어코딩': 'secure-coding' },
   LANGS: ['en', 'ru'],

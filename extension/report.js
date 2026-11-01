@@ -12,7 +12,7 @@ const ReportView = (() => {
       if (params.get('doc_id')) q.doc_id = params.get('doc_id');
       r = await Api.report(q);
     } catch (e) {
-      App.status(`${t.errServer} (${e.message})`, { error: true, retry: render });
+      App.status(e instanceof TypeError ? t.errServer : `${t.errServerFail} (${e.message})`, { error: true, retry: render });
       return;
     }
     const all = await chrome.storage.local.get(null).catch(() => ({}));

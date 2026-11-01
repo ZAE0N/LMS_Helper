@@ -179,7 +179,41 @@ def invalid_output(case):
     return make
 
 
-@pytest.mark.parametrize('case', ['count', 'page', 'evidence', 'missing_evidence', 'choices', 'duplicate_choices', 'index',
+def test_wrong_page_is_corrected_without_retry(setup):
+    client, request, fake = setup
+    fake.outputs = [invalid_output('page')]
+    response = client.post('/quiz', json=request)
+    assert response.status_code == 200 and len(fake.calls) == 1
+    assert response.json()['questions'][0]['page'] == 1
+
+
+def test_spacing_and_bullet_differences_are_accepted(setup, monkeypatch):
+    client, request, fake = setup
+    Cache(service.DATA_DIR / 'docs').put(DOC_ID, {'lang': 'en', 'pages': [
+        {'page': 1, 'original': '\uf0fc해시는블록을연결한다.', 'translated': 'Hashes link blocks.'}]})
+    def spaced(payload):
+        result = questions(payload)
+        for q in result['questions']:
+            q['evidence'] = ['해시는 블록을 연결한다']
+        return result
+    fake.outputs = [spaced]
+    assert client.post('/quiz', json=request).status_code == 200
+    assert len(fake.calls) == 1
+
+
+def test_valid_questions_are_kept_when_retry_also_fails(setup):
+    client, request, fake = setup
+    def one_bad(payload):
+        result = questions(payload)
+        result['questions'][0]['evidence'] = 'Invented text'
+        return result
+    fake.outputs = [one_bad, one_bad]
+    response = client.post('/quiz', json=request)
+    assert response.status_code == 200 and len(fake.calls) == 2
+    assert {q['type'] for q in response.json()['questions']} == {'short', 'matching'}
+
+
+@pytest.mark.parametrize('case', ['count', 'evidence', 'missing_evidence', 'choices', 'duplicate_choices', 'index',
                                   'bool_index', 'empty_question', 'extra', 'missing_type', 'duplicate_question', 'keywords', 'matching_left', 'matching_right'])
 def test_invalid_generation_retried_once_then_corrected(setup, case):
     client, request, fake = setup

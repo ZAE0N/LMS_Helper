@@ -11,6 +11,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from . import service
+from .grounding import locate
 from .llm import LLM
 
 MAX_PAGES = 4
@@ -160,13 +161,14 @@ def parse_json(raw: str) -> str:
 
 
 def checked_citations(citations: list[Citation], excerpts: list[dict]) -> list[Citation]:
+    """전달한 발췌문에서 찾은 인용만 남김. 페이지가 틀리면 실제로 있는 페이지로 고침"""
+    texts = [(e['page'], e['text']) for e in excerpts]
     checked = []
     for citation in citations:
         quote = ' '.join(citation.quote.split())
-        if not quote or not any(citation.page == e['page'] and quote in ' '.join(e['text'].split()) for e in excerpts):
-            return []
-        if not any(c.page == citation.page and c.quote == quote for c in checked):
-            checked.append(Citation(page=citation.page, quote=quote))
+        page = locate(quote, texts, citation.page) if quote else None
+        if page is not None and not any(c.page == page and c.quote == quote for c in checked):
+            checked.append(Citation(page=page, quote=quote))
     return checked
 
 

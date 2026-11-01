@@ -51,6 +51,8 @@ uvicorn app.main:app --port 8000
 |---|---|---|---|
 | POST | `/documents` | `file`(PDF), `lang`, `course`(선택) | `doc_id`, `pages[] {page, original, translated, terms, issues}`, `issue_pages`, `needs_review` |
 | GET | `/documents/{doc_id}` | | 저장된 결과 |
+| GET | `/documents/{doc_id}/figures/{image}` | | 교재 보기용 그림·도표 PNG |
+| GET | `/documents/{doc_id}/pdf` | | 모양 유지 번역 PDF (준비 중이면 202 `{status: processing}`) |
 | POST | `/glossary/candidates` | `file`, `use_llm` | 검수용 용어 후보 |
 | GET | `/notices` | `source=school 또는 dept`, `limit=1~30` (기본 10), `page>=1` | `items`, `page`, `has_more` |
 | POST | `/notices/extract` | `{items: [{id, title, body, posted_at?}]}` 최대 30건 | `{items: [{id, summary, deadline, deadline_text, action}]}` |
@@ -177,3 +179,28 @@ Swagger `/docs`에서 `POST /chat` 예시 (`doc_id`를 `/documents` 응답의 �
 - 로컬 또는 접근이 제한된 환경에서만 실행 (번역된 교안이 외부에 공개되지 않게)
 - `.env`와 `data/`는 커밋하지 않음
 - 교안 서명 다운로드 URL은 서버로 보내지 말고 파일 내용만 전송
+
+## PDF 보기 (베타, 모양 유지 번역)
+- [pdf2zh_next](https://github.com/PDFMathTranslate/PDFMathTranslate)(BabelDOC, AGPL-3.0)를 **별도 가상환경**에 설치하고 외부 프로그램으로 실행. 서버와 PyMuPDF 버전이 달라 같은 환경에 넣으면 안 됨
+  ```
+  python -m venv C:\dev\pdftest
+  C:\dev\pdftest\Scripts\activate
+  pip install pdf2zh-next "bitstring>=4.3,<5"
+  ```
+  `.env`에 `PDF2ZH_BIN=C:\dev\pdftest\Scripts\pdf2zh_next.exe` (비우면 기능 꺼짐, `/documents/{id}/pdf`는 503)
+- `/documents` 요청 때 원본을 `data/originals/`에 보관. PDF는 `/documents/{id}/pdf`를 처음 요청할 때 만들기 시작. 결과는 `data/layout/{doc_id}.v1.pdf`
+- 교안(doc_id)마다 **한 번만** 만들어 모든 학생이 같은 파일을 받음 → 결과가 매번 같고 토큰도 한 번만 사용. 옵션을 바꾸면 `layout_pdf.VERSION`을 올림
+- 한 번에 하나씩 처리(메모리 2GB 이상 사용). 10쪽 약 1분. 실패하면 10분 동안 다시 시도하지 않음
+- 제목 그림자처럼 글자를 감싸는 작은 그림은 번역 전에 지움 (번역문과 겹치지 않게). 과목 용어집은 CSV로 바꿔 전달
+- 이 기능 이전에 번역한 교안은 원본이 없으므로 확장에서 교안을 한 번 다시 열어야 함 (404)
+
+## 슬라이드 보기 (구조 추출 `app/structure.py`, 그림 OCR `app/figure_ocr.py`)
+- 페이지 글을 제목 · 글머리표(단계 0~3) · 문장 · 코드 · 그림 속 글자 · 코드 주석으로 나누고 위치(`rect`), 번역문 자리(`box`), 글자 크기·색·굵기를 함께 돌려줌. 글자 간격으로 빠진 띄어쓰기를 되살림 (한글 PDF)
+- 페이지마다 원본 그림(`{page}.jpg`)과 번역할 글자만 지운 배경(`{page}-bg.jpg`)을 `data/figures/{doc_id}/`에 저장. 확장이 배경 위 같은 자리에 번역문을 올림. 제목 그림자처럼 글자를 감싸는 작은 그림은 배경에서 지움
+- 번역문 자리: 글 덩어리는 오른쪽·아래로 다른 글이나 그림을 만날 때까지 넓힘(번역문은 보통 한국어보다 김). 그림 속 글자는 원래 칸, 코드 주석은 코드 영역 안 한 줄
+- 코드는 번역하지 않음. `//` `#` `/* */` `<!-- -->` 주석 중 한글이 있는 부분만 번역
+- 통째로 붙인 그림 속 한글: RapidOCR(Apache-2.0) 한국어 모델로 찾아 번역하고 배경에서는 둘레 색으로 덮음. 모델(약 13MB)은 처음 실행 때 한 번 내려받음. 끄려면 `.env`에 `FIGURE_OCR=0`
+- 여러 페이지에 반복되는 머리·꼬리 장식(그림·도형·글 줄)은 그대로 둠(번역 안 함). 단, 반복되는 단원 제목(위쪽 큰 글자)은 번역
+- Wingdings 글머리표(q ü Ø), 기호만 따로 있는 줄도 글머리표로 인식. 두 단 슬라이드는 왼쪽 단 → 오른쪽 단 순서(챗봇·복습용 글)
+- 글 덩어리는 `⟦B번호⟧` 표시를 붙여 페이지마다 한 번에 번역하고 다시 나눔. 표시가 어긋나면 그 페이지는 원본 그림 + 전체 번역으로 대체
+- 형식을 바꾸면 `service.STRUCTURE_VERSION`을 올림 → 교안을 새로 만듦 (교안마다 한 번)

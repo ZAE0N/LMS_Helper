@@ -82,15 +82,16 @@ const App = (() => {
   }
 
   // 같은 파일·같은 수정 시각·같은 언어면 서버에 저장된 번역을 다시 씀
-  async function loadDoc(onStep) {
+  // force: 저장된 번역이 있어도 파일을 다시 보냄 (서버에 원본이 없을 때, 예: PDF 보기)
+  async function loadDoc(onStep, { force = false } = {}) {
     const { t, lang } = App;
     const course = params.get('course');
     const file = params.get('file');
-    const key = `doc:${file}:${lang}`;
+    const key = `doc:v8:${file}:${lang}`; // 교재 보기 형식이 바뀌면 올려서 다시 번역
     onStep(t.step.meta);
     const meta = await fileMeta(course, file).catch(() => { throw new UserError(t.errDownload); });
     const saved = (await store.get(key))[key];
-    if (saved && saved.updated_at === meta.updated_at) {
+    if (!force && saved && saved.updated_at === meta.updated_at) {
       onStep(t.step.cached);
       try { return await Api.getDocument(saved.doc_id); } catch {}
     }
@@ -103,7 +104,7 @@ const App = (() => {
     const name = meta.name || params.get('name') || 'document.pdf';
     const glossary = CONFIG.GLOSSARY[params.get('courseName')] || null;
     const doc = await Api.translateDocument(blob, name, lang, glossary).catch(e => {
-      throw new UserError(e instanceof TypeError ? t.errServer : `${t.errServer} (${e.message})`);
+      throw new UserError(e instanceof TypeError ? t.errServer : `${t.errServerFail} (${e.message})`); // TypeError = 연결 자체 실패
     });
     await store.set({
       [key]: { doc_id: doc.doc_id, updated_at: meta.updated_at },
