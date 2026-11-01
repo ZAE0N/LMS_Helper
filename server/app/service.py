@@ -8,12 +8,12 @@ from . import glossary as g
 from .figure_ocr import figure_labels
 from .llm import LLM
 from .structure import MARK, analyze_pdf, apply_marked, marked_text, render_page
-from .translate import LANGS, Cache, glossary_version, translate_page
+from .translate import LANGS, PROMPT_VERSION, Cache, glossary_version, translate_page
 
 ROOT = Path(__file__).resolve().parent.parent
 GLOSSARY_DIR = Path(os.getenv("GLOSSARY_DIR", ROOT / "glossary"))
 DATA_DIR = Path(os.getenv("DATA_DIR", ROOT / "data"))
-STRUCTURE_VERSION = "slide-v3"  # 페이지 형식(blocks 등)을 바꾸면 올려서 교안을 새로 만들게 함
+STRUCTURE_VERSION = "slide-v4"  # 페이지 형식(blocks 등)을 바꾸면 올려서 교안을 새로 만들게 함
 _DOCUMENT_LOCKS = [Lock() for _ in range(64)]
 _PAGE_LOCKS = [Lock() for _ in range(64)]
 
@@ -49,7 +49,7 @@ def translate_pdf(data: bytes, lang: str, course: str | None, llm: LLM, *, worke
         # 통째로 붙인 그림 속 한글(OCR)도 같은 자리에 번역
         blocks += figure_labels(data, p["page"], p.get("figures") or [], [b["rect"] for b in blocks if b["type"] == "label"])
         source = marked_text(blocks) or p["text"]
-        k = Cache.key(source, lang, gver)
+        k = Cache.key(source, lang, gver, PROMPT_VERSION)
         with _PAGE_LOCKS[int(k[:8], 16) % len(_PAGE_LOCKS)]:
             if (r := pages_cache.get(k)) is None:
                 r = translate_page(source, lang, terms, llm)
@@ -62,8 +62,8 @@ def translate_pdf(data: bytes, lang: str, course: str | None, llm: LLM, *, worke
         page["translated"] = MARK.sub("", r["translated"]).replace("\n\n", "\n").strip()
         save_pages(doc_id, data, page, blocks)
         for b in blocks:
-            b.pop("lines", None)
-            b.pop("fill", None)
+            for key in ("lines", "fill", "runs", "parts"):
+                b.pop(key, None)
         page["blocks"] = blocks
         return page
 

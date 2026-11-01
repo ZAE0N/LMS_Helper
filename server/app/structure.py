@@ -21,6 +21,7 @@ HANGUL = re.compile(r'[가-힣]')
 # 코드 주석 시작: // (주소의 :// 제외), # (#include·#fff 제외), /*, <!--, 여러 줄 주석의 * 줄
 COMMENT = re.compile(r'(?<![:\w"\'])//+|(?<![\w&])#+(?![A-Za-z0-9_{])|/\*+|<!--|^\s*\*+(?!/)')
 COMMENT_END = re.compile(r'\s*(\*/|-->)\s*$')
+HANGUL_RUN = re.compile(r'[가-힣]+(?:[ \t]+[가-힣]+)*')
 URL = re.compile(r'https?://\S+|www\.\S+')
 TOP, BOTTOM = 0.15, 0.88  # 머리 장식 / 꼬리 장식 경계 (페이지 높이 비율)
 FOOTER = 0.9
@@ -110,14 +111,41 @@ def _r(rect) -> list[float]:
     return [round(v, 1) for v in rect]
 
 
-def comment_part(text: str) -> tuple[int, int] | None:
-    """코드 줄에서 한글이 있는 주석 내용의 (시작, 끝). 주석 기호(//, # …)는 원문 유지"""
+def _comment(text: str) -> tuple[int, int, int] | None:
+    """(주석 기호 위치, 내용 시작, 내용 끝)"""
     for m in COMMENT.finditer(text):
         if HANGUL.search(text, m.end()):
             start = len(text) - len(text[m.end():].lstrip())
             end = (e.start() if (e := COMMENT_END.search(text, start)) else len(text))
-            return (start, end) if end > start else None
+            return (m.start(), start, end) if end > start else None
     return None
+
+
+def comment_part(text: str) -> tuple[int, int] | None:
+    """코드 줄에서 한글이 있는 주석 내용의 (시작, 끝). 주석 기호(//, # …)는 원문 유지"""
+    c = _comment(text)
+    return c and c[1:]
+
+
+def code_parts(text: str, boxes: list, base: dict) -> list[dict]:
+    """코드 줄 속 한글: 주석 내용(comment), 문자열·HTML 글자 등 이어진 한글 덩어리(codetext, 번역 단위),
+    그리고 한글 덩어리를 번역문으로 바꿔 다시 쓸 코드 줄(codeline, 주석 앞까지)"""
+    out, line = [], object()  # line: 같은 줄 표시 (여러 줄 코드가 한 덩어리로 합쳐져도 줄별로 다시 씀)
+    c = _comment(text)
+    if c:
+        r = _union(boxes[c[1]:c[2]])
+        out.append({**base, 'kind': 'comment', 'text': text[c[1]:c[2]].strip(), 'rect': r, 'lines': [r]})
+    stop = c[0] if c else len(text)
+    runs = [(m.start(), m.end()) for m in HANGUL_RUN.finditer(text, 0, stop)]
+    for a, b in runs:
+        r = _union(boxes[a:b])
+        out.append({**base, 'kind': 'codetext', 'text': text[a:b], 'rect': r, 'lines': [r], 'line': line})
+    if runs:
+        head = text[:stop].rstrip()
+        r = _union(boxes[:len(head)])
+        out.append({**base, 'kind': 'codeline', 'text': head, 'rect': r, 'lines': [r], 'runs': runs, 'line': line,
+                    'stop': boxes[stop][0] if c and boxes[stop] else None})
+    return out
 
 
 def figure_regions(page: pymupdf.Page, template: Template) -> list[dict]:
@@ -169,19 +197,21 @@ def figure_regions(page: pymupdf.Page, template: Template) -> list[dict]:
     return merged
 
 
-def _columns(items: list[dict], width: float, height: float) -> list[dict]:
-    """왼쪽·오른쪽 두 단으로 나뉜 슬라이드(예: 왼쪽 코드, 오른쪽 설명)는 왼쪽 단을 다 읽고 오른쪽 단을 읽음"""
+def _columns(items: list[dict], width: float, height: float) -> tuple[list[dict], float | None]:
+    """왼쪽·오른쪽 두 단으로 나뉜 슬라이드(예: 왼쪽 코드, 오른쪽 설명)는 왼쪽 단을 다 읽고 오른쪽 단을 읽음.
+    (순서, 오른쪽 단이 시작하는 x 또는 None)"""
     head = [it for it in items if it['y'] < 0.18 * height]
     body = [it for it in items if it['y'] >= 0.18 * height]
     left = [it for it in body if it['x'] < width * 0.5]
     right = [it for it in body if it['x'] >= width * 0.5]
     if len(left) < 3 or len(right) < 3:
-        return items
+        return items, None
     span = lambda group: (min(it['y'] for it in group), max(it['y'] for it in group))  # noqa: E731
     (l0, l1), (r0, r1) = span(left), span(right)
     if min(l1, r1) - max(l0, r0) < 0.5 * min(l1 - l0, r1 - r0):
-        return items
-    return head + left + right
+        return items, None
+    return head + left + right, min(it['outer'].x0 for it in right if it['type'] == 'text') if any(
+        it['type'] == 'text' for it in right) else None
 
 
 def _merge_labels(labels: list[dict]) -> list[dict]:
@@ -192,7 +222,7 @@ def _merge_labels(labels: list[dict]) -> list[dict]:
         prev = next((o for o in reversed(out) if abs(o['size'] - label['size']) < 1 and o['text'] != label['text']
                      and -label['size'] * 0.4 <= r.y0 - o['rect'].y1 < label['size'] * 0.6
                      and min(r.x1, o['rect'].x1) - max(r.x0, o['rect'].x0) > 0.5 * min(r.width, o['rect'].width)), None)
-        if prev is None:
+        if prev is None or label.get('mono') or prev.get('mono'):
             out.append(dict(label, lines=list(label['lines'])))
         else:
             prev['text'] += ' ' + label['text']
@@ -209,6 +239,7 @@ def _style(line: dict) -> dict:
 def page_blocks(page: pymupdf.Page, template: Template | None = None) -> tuple[list[dict], list[dict]]:
     """(blocks, figures). 블록: {type, level, text, rect, box, size, color, bold, lines}
     - type: heading | bullet | text | code | label(그림 속 글자) | comment(코드 속 한글 주석)
+      | codetext(코드 속 한글 덩어리, 번역 단위) | codeline(codetext를 번역문으로 바꾼 코드 줄, 화면 표시용)
     - box: 번역문이 들어갈 수 있는 자리, lines: 지울 원문 줄 위치"""
     template = template or Template()
     width, height = page.rect.width, page.rect.height
@@ -218,40 +249,40 @@ def page_blocks(page: pymupdf.Page, template: Template | None = None) -> tuple[l
     items: list[dict] = [{'type': 'image', 'y': f['rect'].y0, 'x': f['rect'].x0, 'figure': f} for f in figures]
     lines = [line for block in page.get_text('rawdict')['blocks'] if block['type'] == 0 for line in block['lines']]
     # 글머리 기호만 따로 있는 줄 (기호와 글이 다른 줄로 저장된 PDF). 글 줄보다 뒤에 저장된 경우도 있어 먼저 모음
-    marks = []
+    marks, mark_rects = [], []
     for line in lines:
         bullet, text, _ = line_parts(line)
         if bullet and not text:
             marks.append((line['bbox'][1], line['bbox'][2], max(s['size'] for s in line['spans'])))
+            mark_rects.append(pymupdf.Rect(line['bbox']))
+    deco = []  # 머리·꼬리 장식 줄: 번역은 하되 챗봇·복습용 글과 제목·단계 계산에서는 뺌
     for line in lines:
         box = pymupdf.Rect(line['bbox'])
         raw = ''.join(c['c'] for s in line['spans'] for c in s.get('chars', []))
         size = max(s['size'] for s in line['spans'])
-        heading = box.y0 < 0.2 * height and size >= 18  # 여러 페이지에 반복되는 단원 제목도 번역
-        if box.y0 > FOOTER * height or _line_key(raw, box.y0) in template.lines and not heading:
-            continue
         bullet, text, boxes = line_parts(line)
         if not text:
             continue
         rect = _union(boxes)
-        base = {'text': text, 'rect': rect, 'size': size, 'lines': [rect], **_style(line)}
-        owner = next((f for f in figures if (f['rect'] & box).get_area() > box.get_area() * 0.5), None)
-        if owner is not None:  # 그림 안의 글자 → 그림 위 같은 자리에 번역
-            owner['labels'].append(base)
+        base = {'text': text, 'rect': rect, 'outer': box, 'size': size, 'lines': [rect], **_style(line)}
+        heading = box.y0 < 0.2 * height and size >= 18  # 여러 페이지에 반복되는 단원 제목은 본문 제목으로
+        if box.y0 > FOOTER * height or _line_key(raw, box.y0) in template.lines and not heading:
+            deco.append(base)
             continue
-        bullet = bullet or any(abs(y - box.y0) < size * 0.6 and x1 <= box.x0 + 2 and box.x0 - x1 < 40 for y, x1, _ in marks)
         # 코드 = 글머리표 없이 고정폭 글꼴로 시작하는 줄 (주석 속 한글은 다른 글꼴로 대체되므로 첫 글자로 판단)
         first = next((s for s in line['spans'] if any(not c['c'].isspace() for c in s.get('chars', []))
                       and not SYMBOL_FONT.search(s['font'])), None)
-        mono = not bullet and first is not None and MONO.search(first['font']) is not None
-        comments = []
-        if mono and (part := comment_part(text)):
-            crect = _union(boxes[part[0]:part[1]])
-            comments.append({**base, 'text': text[part[0]:part[1]].strip(), 'rect': crect, 'lines': [crect]})
+        mono = first is not None and MONO.search(first['font']) is not None
+        owner = next((f for f in figures if (f['rect'] & box).get_area() > box.get_area() * 0.5), None)
+        if owner is not None:  # 그림 안의 글자 → 그림 위 같은 자리에 번역 (표 속 코드는 한글만)
+            owner['labels'].append({**base, 'mono': mono, 'codes': code_parts(text, boxes, base) if mono else []})
+            continue
+        bullet = bullet or any(abs(y - box.y0) < size * 0.6 and x1 <= box.x0 + 2 and box.x0 - x1 < 40 for y, x1, _ in marks)
+        mono = mono and not bullet
         items.append({'type': 'text', 'y': box.y0, 'x': box.x0, 'bullet': bullet, 'mono': mono,
-                      'comments': comments, **base})
+                      'comments': code_parts(text, boxes, base) if mono else [], **base})
     items.sort(key=lambda it: (round(it['y'] / 4), it['x']))
-    items = _columns(items, width, height)
+    items, split = _columns(items, width, height)
 
     merged: list[dict] = []
     for it in items:
@@ -268,6 +299,7 @@ def page_blocks(page: pymupdf.Page, template: Template | None = None) -> tuple[l
         if join:
             prev['text'] += join + it['text']
             prev['rect'] = prev['rect'] | it['rect']
+            prev['outer'] = prev['outer'] | it['outer']
             prev['lines'] += it['lines']
             prev['comments'] += it['comments']
             prev['last_y'] = it['y']
@@ -288,8 +320,18 @@ def page_blocks(page: pymupdf.Page, template: Template | None = None) -> tuple[l
     lefts = sorted({round(it['x']) for it in texts if not it['mono'] and it is not title})
 
     def block(kind: str, level: int, it: dict) -> dict:
-        return {'type': kind, 'level': level, 'text': it['text'], 'rect': it['rect'], 'size': round(it['size'], 1),
-                'color': it['color'], 'bold': it['bold'], 'lines': it['lines']}
+        return {'type': kind, 'level': level, 'text': it['text'], 'rect': it['rect'], 'outer': it.get('outer', it['rect']),
+                'size': round(it['size'], 1), 'color': it['color'], 'bold': it['bold'], 'lines': it['lines']}
+
+    def code_blocks(parts: list[dict], level: int, limit: float) -> list[dict]:
+        out, first = [], len(blocks)
+        for c in parts:
+            b = dict(block(c['kind'], level, c), limit=c['stop'] - 4 if c.get('stop') is not None else limit)
+            if c['kind'] == 'codeline':  # 이 줄의 codetext 블록 번호와 글자 위치
+                b['parts'] = [first + k for k, x in enumerate(parts) if x['kind'] == 'codetext' and x['line'] is c['line']]
+                b['runs'] = c['runs']
+            out.append(b)
+        return out
 
     panels = [pymupdf.Rect(d['rect']) for d in page.get_drawings()] if any(it.get('comments') for it in merged) else []
     blocks = []
@@ -297,21 +339,29 @@ def page_blocks(page: pymupdf.Page, template: Template | None = None) -> tuple[l
         if it['type'] == 'image':
             for label in _merge_labels(it['figure']['labels']):
                 b = block('label', 0, label)
-                b['cell'] = _cell(label['rect'], it['figure'].get('cells', []))
-                b['wrap'] = len(label['lines']) > 1 or b['cell'] is not None
+                cell = _cell(label['rect'], it['figure'].get('cells', []))
+                if label.get('mono'):  # 표 속 코드: 코드는 그대로, 한글만 따로 번역
+                    b['code'] = True
+                    blocks.append(b)
+                    blocks += code_blocks(label['codes'], 0, cell.x1 - 3 if cell is not None else label['rect'].x1 + 4)
+                    continue
+                b['cell'] = cell
+                b['wrap'] = len(label['lines']) > 1 or cell is not None
                 blocks.append(b)
             continue
         level = 0 if it is title else min(3, sum(1 for x in lefts if x < it['x'] - 8))
         kind = 'heading' if it is title else 'code' if it['mono'] else 'bullet' if it['bullet'] else 'text'
         blocks.append(block(kind, level, it))
-        if it['comments']:  # 주석 번역은 코드 영역(배경 상자가 있으면 그 상자) 안에서만
+        if it['comments']:  # 코드 속 한글은 코드 영역(배경 상자가 있으면 그 상자) 안에서만
             panel = min((d for d in panels if d.contains(it['rect'])), key=lambda d: d.get_area(), default=None)
-            limit = panel.x1 - 6 if panel is not None else it['rect'].x1 + 4
-            blocks += [dict(block('comment', level, c), limit=limit) for c in it['comments']]
-    _boxes(blocks, figures, width, height)
+            blocks += code_blocks(it['comments'], level, panel.x1 - 6 if panel is not None else it['rect'].x1 + 4)
+    blocks += [dict(block('text', 0, d), deco=True) for d in deco if needs_translation(d['text'])]
+    fixed = mark_rects + [d['outer'] for d in deco if not needs_translation(d['text'])]  # 쪽 번호 등도 피함
+    _boxes(blocks, figures, width, height, fixed, split)
     for b in blocks:
         b['rect'] = _r(b['rect'])
         b['lines'] = [_r(r) for r in b['lines']]
+        b.pop('outer', None)
     return blocks, [{'rect': _r(f['rect']), 'raster': f['raster']} for f in figures]
 
 
@@ -327,12 +377,16 @@ def label_box(r: pymupdf.Rect, size: float) -> pymupdf.Rect:
     return pymupdf.Rect(r.x0 - 2, r.y0 - size * 0.3, r.x1 + 2, r.y1 + size * 0.3)
 
 
-def _boxes(blocks: list[dict], figures: list[dict], width: float, height: float) -> None:
-    """번역문이 들어갈 자리(box). 글 덩어리는 오른쪽·아래로 다른 글이나 그림을 만날 때까지 넓힘
-    (번역문은 보통 한국어보다 길어서). 그림 속 글자는 원래 칸, 코드 주석은 한 줄"""
-    others = [(b, b['rect']) for b in blocks if b['type'] != 'comment'] + [(None, f['rect']) for f in figures]
+def _boxes(blocks: list[dict], figures: list[dict], width: float, height: float,
+           marks: list[pymupdf.Rect] = (), split: float | None = None) -> None:
+    """번역문이 들어갈 자리(box). 글 덩어리는 오른쪽·아래로 다른 글·글머리 기호·그림을 만날 때까지 넓힘
+    (번역문은 보통 한국어보다 길어서). 두 단 슬라이드는 단 경계를 넘지 않음.
+    그림 속 글자는 원래 칸, 코드 속 한글은 원래 자리 한 줄"""
+    others = [(b, b.get('outer', b['rect'])) for b in blocks if b['type'] not in ('comment', 'codetext', 'codeline')] + \
+        [(None, f['rect']) for f in figures] + [(None, m) for m in marks]
     for b in blocks:
         r, s = b['rect'], b['size']
+        floor = height if b.get('deco') else FOOTER * height
         if b['type'] == 'label':
             b['align'] = 'center'
             cell = b.pop('cell', None)
@@ -342,7 +396,7 @@ def _boxes(blocks: list[dict], figures: list[dict], width: float, height: float)
                 box = label_box(r, s)
             elif cell is not None and r.x0 - cell.x0 < (cell.x1 - r.x1) * 0.5 - 2:
                 b['align'] = 'left'  # 표의 왼쪽 정렬 칸
-        elif b['type'] == 'comment':
+        elif b['type'] in ('comment', 'codetext', 'codeline'):
             box = pymupdf.Rect(r.x0, r.y0 - 1, max(b.pop('limit', width - 6), r.x1), r.y1 + 1)
         elif b['type'] in ('heading', 'text') and abs((r.x0 + r.x1) / 2 - width / 2) < width * 0.04 and r.x0 > width * 0.12:
             # 가운데 정렬된 제목·부제목: 가운데를 기준으로 양쪽으로 넓힘
@@ -353,16 +407,18 @@ def _boxes(blocks: list[dict], figures: list[dict], width: float, height: float)
                          and o.y0 < r.y1 and o.y1 > r.y0] + [width * 0.94])
             half = max(min(cx - left, right - cx), r.width / 2)
             bottom = min([o.y0 - 2 for x, o in others if x is not b and o.y0 >= r.y1 - 2
-                          and o.x0 < cx + half and o.x1 > cx - half] + [FOOTER * height])
+                          and o.x0 < cx + half and o.x1 > cx - half] + [floor])
             box = pymupdf.Rect(cx - half, r.y0, cx + half, max(bottom, r.y1))
             b['align'] = 'center'
         else:
             margin = max(min(r.x0, width * 0.06), 10)
             right = min([o.x0 - 6 for x, o in others if x is not b and o.x0 >= r.x1 - 2
                          and o.y0 < r.y1 and o.y1 > r.y0] + [width - margin])
+            if split is not None and r.x0 < split and r.y0 >= 0.18 * height:
+                right = min(right, split - 8)  # 왼쪽 단 글은 오른쪽 단으로 넘어가지 않음
             right = max(right, r.x1)
             bottom = min([o.y0 - 2 for x, o in others if x is not b and o.y0 >= r.y1 - 2
-                          and o.x0 < right and o.x1 > r.x0] + [FOOTER * height])
+                          and o.x0 < right and o.x1 > r.x0] + [floor])
             box = pymupdf.Rect(r.x0, r.y0, right, max(bottom, r.y1))
         b['box'] = _r(box)
 
@@ -374,7 +430,7 @@ def analyze_pdf(data: bytes) -> list[dict]:
         template = find_template(doc)
         for i, page in enumerate(doc):
             blocks, figures = page_blocks(page, template)
-            text = '\n'.join(b['text'] for b in blocks if b['type'] != 'comment')
+            text = '\n'.join(b['text'] for b in blocks if b['type'] not in ('comment', 'codetext', 'codeline') and not b.get('deco'))
             pages.append({'page': i + 1, 'text': text, 'size': [round(page.rect.width, 1), round(page.rect.height, 1)],
                           'blocks': blocks, 'figures': figures})
     return pages
@@ -385,12 +441,14 @@ def needs_translation(text: str) -> bool:
     return bool(re.search(r'[^\W\d_]{2,}', URL.sub('', text)))
 
 
-TRANSLATABLE = ('heading', 'bullet', 'text', 'label', 'comment')
+TRANSLATABLE = ('heading', 'bullet', 'text', 'label', 'comment', 'codetext')
 
 
 def units(blocks: list[dict]) -> list[tuple[int, str]]:
     """번역 단위 (블록 번호, 글). 코드는 원문 유지 (한글 주석만 따로 번역)"""
-    return [(i, b['text']) for i, b in enumerate(blocks) if b['type'] in TRANSLATABLE and needs_translation(b['text'])]
+    return [(i, b['text']) for i, b in enumerate(blocks)
+            if b['type'] in TRANSLATABLE and not b.get('code') and (needs_translation(b['text']) or
+                                                                    b['type'] == 'codetext' and HANGUL.search(b['text']))]
 
 
 def marked_text(blocks: list[dict]) -> str:
@@ -406,10 +464,16 @@ def apply_marked(translated: str, blocks: list[dict]) -> bool:
     if sorted(found) != list(range(len(wanted))) or not all(found.values()):
         return False
     for b in blocks:
-        if b['type'] in TRANSLATABLE:
+        if b['type'] in TRANSLATABLE and not b.get('code'):
             b['translated'] = b['text']  # 번역 대상이 아니면 원문 그대로
     for n, (i, _) in enumerate(wanted):
         blocks[i]['translated'] = found[n]
+    for b in blocks:  # 코드 줄: 한글 덩어리만 번역문으로 바꿔 줄 전체를 다시 씀
+        if b['type'] == 'codeline':
+            text = b['text']
+            for (a, e), i in sorted(zip(b['runs'], b['parts']), reverse=True):
+                text = text[:a] + blocks[i].get('translated', blocks[i]['text']) + text[e:]
+            b['translated'] = text
     return True
 
 

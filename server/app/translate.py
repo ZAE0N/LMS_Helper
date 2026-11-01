@@ -32,7 +32,12 @@ Rules:
 2. Follow the glossary exactly (KEEP / FIXED / BILINGUAL).
 3. Keep line breaks and list structure. Do not add explanations.
    A paragraph that starts with a marker like ⟦B3⟧ must keep that marker unchanged at its start.
-4. Output only the translation."""
+4. Proper nouns: use the official or widely used {lang} name when one exists
+   (for example 인하공업전문대학 → Inha Technical College). Keep Korean-only proper nouns that have
+   no widely used {lang} name (people's names, Korean place or service names) exactly as written in Korean.
+   If unsure, keep the Korean.
+5. Output only the translation."""
+PROMPT_VERSION = "p2"  # 위 규칙을 바꾸면 올려서 저장된 페이지 번역을 다시 만듦
 
 USER = """Glossary:
 {glossary}

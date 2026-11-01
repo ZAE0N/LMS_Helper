@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import figure_ocr, main, service
-from app.structure import analyze_pdf, apply_marked, comment_part, marked_text
+from app.structure import analyze_pdf, apply_marked, code_parts, comment_part, marked_text
 
 
 def slide_pdf() -> bytes:
@@ -196,3 +196,36 @@ def test_ocr_engine_uses_supported_korean_model(monkeypatch):
     monkeypatch.setattr(figure_ocr, '_failed', False)
     assert figure_ocr._get_engine() is not None
     assert str(seen['Rec.lang_type'].value) == 'korean' and str(seen['Rec.model_type'].value) == 'mobile'
+
+
+def test_code_korean_runs_are_translated_and_line_is_rewritten():
+    text = 'console.log("서명 계정:", a); // 주소 출력'
+    boxes = [(i * 6.0, 0, i * 6.0 + 6, 10) for i in range(len(text))]
+    parts = code_parts(text, boxes, {'size': 10, 'color': '#000000', 'bold': False})
+    kinds = [(p['kind'], p['text']) for p in parts]
+    assert kinds == [('comment', '주소 출력'), ('codetext', '서명 계정'), ('codeline', 'console.log("서명 계정:", a);')]
+    line = parts[2]
+    blocks = [{'type': 'comment', 'text': '주소 출력'}, {'type': 'codetext', 'text': '서명 계정'},
+              {'type': 'codeline', 'text': line['text'], 'runs': line['runs'], 'parts': [1]}]
+    assert marked_text(blocks) == '⟦B0⟧ 주소 출력\n\n⟦B1⟧ 서명 계정'
+    assert apply_marked('⟦B0⟧ print address\n\n⟦B1⟧ Signer account', blocks)
+    assert blocks[2]['translated'] == 'console.log("Signer account:", a);'
+    assert line['stop'] == text.index('//') * 6.0  # 다시 쓴 줄은 주석 앞에서 멈춤
+
+
+def test_footer_is_translated_but_not_in_page_text_and_columns_do_not_overlap():
+    doc = pymupdf.open()
+    page = doc.new_page(width=720, height=540)
+    for y, (left, right) in enumerate([('왼쪽 첫째 항목', '오른쪽 첫째 항목'), ('왼쪽 둘째 항목', '오른쪽 둘째 항목'),
+                                       ('왼쪽 셋째 항목', '오른쪽 셋째 항목')]):
+        page.insert_text((60, 140 + y * 40), left, fontname='korea', fontsize=18)
+        page.insert_text((380, 140 + y * 40), '□', fontname='korea', fontsize=18)
+        page.insert_text((405, 140 + y * 40), right, fontname='korea', fontsize=18)
+    page.insert_text((60, 520), '인하공업전문대학', fontname='korea', fontsize=10)
+    page.insert_text((660, 520), '3', fontname='korea', fontsize=10)
+    p = analyze_pdf(doc.tobytes())[0]
+    footer = next(b for b in p['blocks'] if b['text'] == '인하공업전문대학')
+    assert footer.get('deco') and '인하공업전문대학' not in p['text']
+    assert footer['box'][2] < 660  # 쪽 번호를 덮지 않음
+    left = next(b for b in p['blocks'] if b['text'] == '왼쪽 첫째 항목')
+    assert left['box'][2] < 380  # 오른쪽 단의 글머리 기호 앞에서 멈춤
