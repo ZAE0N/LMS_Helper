@@ -120,14 +120,15 @@ const App = (() => {
   }
 
   // 비밀번호 입력 (입력값은 이 요청에만 쓰고 저장하지 않음)
-  function askPassword(wrong, onSubmit) {
+  function askPassword(wrong, onSubmit, onCancel) {
     const { t } = App;
     const input = h('input', { type: 'password', class: 'pw', autocomplete: 'off', 'aria-label': t.password, placeholder: t.password });
     const submit = () => input.value && onSubmit(input.value);
     input.addEventListener('keydown', e => e.key === 'Enter' && submit());
     document.getElementById('app').replaceChildren(h('div', { class: 'status' },
       h('p', { class: wrong ? 'bad-text' : '' }, wrong ? t.errPasswordWrong : t.errPassword),
-      h('div', { class: 'pw-row' }, input, h('button', { type: 'button', class: 'btn', onclick: submit }, t.open))));
+      h('div', { class: 'pw-row' }, input, h('button', { type: 'button', class: 'btn', onclick: submit }, t.open),
+        h('button', { type: 'button', class: 'btn ghost', onclick: () => onCancel() }, t.cancel))));
     input.focus();
   }
 

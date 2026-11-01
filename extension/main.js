@@ -29,7 +29,9 @@
       if (mode === 'review') await QuizView.render(doc);
       else DocView.render(doc);
     } catch (e) {
-      if (e instanceof App.PasswordError) return App.askPassword(e.wrong, pw => open(pw));
+      if (e instanceof App.PasswordError) {
+        return App.askPassword(e.wrong, pw => open(pw), () => App.status(t.passwordCancelled, { error: true, retry: () => open() }));
+      }
       App.status(e instanceof App.UserError ? e.message : e instanceof TypeError ? t.errServer : `${t.errServerFail} (${e.message})`, { error: true, retry: () => open() });
     }
   }
