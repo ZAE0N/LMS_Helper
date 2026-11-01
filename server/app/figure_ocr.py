@@ -13,6 +13,7 @@ from .structure import _RENDER_LOCK, HANGUL, _r, label_box
 
 log = logging.getLogger(__name__)
 DPI = 300  # 화면 캡처 속 작은 글자도 읽도록 크게
+SCAN_DPI = 100
 MIN_SCORE = 0.5
 GARBLED = re.compile(r'[\u3131-\u318e|{}\[\]<>]')  # 낱자모·기호가 섞이면 잘못 읽은 것
 _lock = Lock()
@@ -60,6 +61,7 @@ def figure_labels(data: bytes, page: int, figures: list[dict], known: list[list[
         # 그림만 찍은 것과 둘레를 조금 넓혀 찍은 것(가장자리에 붙은 글자) 둘 다 읽고, 겹치면 점수가 높은 쪽
         clips = rasters + [r + (-8, -8, 8, 8) & area for r in rasters]
         shots = [(clip, doc[page - 1].get_pixmap(clip=clip, dpi=DPI)) for clip in clips]
+        whole = doc[page - 1].get_pixmap(dpi=SCAN_DPI)  # 번역문 자리(칸) 찾기용
     global _failed
     labels = []
     for clip, pix in shots:
@@ -86,7 +88,49 @@ def figure_labels(data: bytes, page: int, figures: list[dict], known: list[list[
                            'bold': False, 'align': 'center', 'box': _r(label_box(rect, size)), 'ocr': True,
                            'fill': fill, 'lines': [_r(rect + (-1, -1, 1, 1))], 'score': score})
     labels.sort(key=lambda x: -x['score'])
-    return [{k: v for k, v in x.items() if k != 'score'} for x in _stack(labels)]
+    out = [{k: v for k, v in x.items() if k != 'score'} for x in _stack(labels)]
+    for label in out:
+        frame = next((r + (-8, -8, 8, 8) for r in rasters if (r + (-8, -8, 8, 8)).contains(pymupdf.Rect(label['rect']))), None)
+        if frame is not None:
+            label['box'] = _r(_room(whole, pymupdf.Rect(label['rect']), frame, label['fill'], [pymupdf.Rect(o['rect']) for o in out if o is not label]))
+            label['wrap'] = True
+    return out
+
+
+def _room(pix: pymupdf.Pixmap, r: pymupdf.Rect, frame: pymupdf.Rect, fill: str, others: list[pymupdf.Rect]) -> pymupdf.Rect:
+    """그림 속 글자 둘레의 빈 바탕(표의 한 칸)까지 번역문 자리를 넓힘. 선·다른 글자·그림 경계를 만나면 멈춤"""
+    k = SCAN_DPI / 72
+    bg = [int(fill[i:i + 2], 16) for i in (1, 3, 5)]
+    data, w, n = pix.samples, pix.width, pix.n
+
+    def plain(x: int, y: int) -> bool:
+        i = (y * w + x) * n
+        return sum((data[i + c] - bg[c]) ** 2 for c in range(3)) < 2700
+
+    def column(x: float, y0: float, y1: float) -> bool:
+        ys = range(int(y0 * k), max(int(y0 * k) + 1, int(y1 * k)))
+        return sum(plain(int(x * k), y) for y in ys) >= 0.9 * len(ys)
+
+    def row(y: float, x0: float, x1: float) -> bool:
+        xs = range(int(x0 * k), max(int(x0 * k) + 1, int(x1 * k)))
+        return sum(plain(x, int(y * k)) for x in xs) >= 0.9 * len(xs)
+
+    step, h = 1 / k, r.height
+    ty0, ty1 = r.y0 + h * 0.15, r.y1 - h * 0.15
+    blocked = lambda q: any(q.intersects(o) for o in others)  # noqa: E731
+    x0 = r.x0
+    while x0 - step > max(frame.x0, r.x0 - 400) and column(x0 - step, ty0, ty1) and not blocked(pymupdf.Rect(x0 - step - 2, ty0, x0, ty1)):
+        x0 -= step
+    x1 = r.x1
+    while x1 + step < min(frame.x1, r.x1 + 400) and column(x1 + step, ty0, ty1) and not blocked(pymupdf.Rect(x1, ty0, x1 + step + 2, ty1)):
+        x1 += step
+    y0 = r.y0
+    while y0 - step > max(frame.y0, r.y0 - h * 1.5) and row(y0 - step, r.x0, r.x1) and not blocked(pymupdf.Rect(r.x0, y0 - step - 2, r.x1, y0)):
+        y0 -= step
+    y1 = r.y1
+    while y1 + step < min(frame.y1, r.y1 + h * 1.5) and row(y1 + step, r.x0, r.x1) and not blocked(pymupdf.Rect(r.x0, y1, r.x1, y1 + step + 2)):
+        y1 += step
+    return pymupdf.Rect(x0 + 1, y0 + 1, x1 - 1, y1 - 1) | r
 
 
 def _stack(labels: list[dict]) -> list[dict]:
