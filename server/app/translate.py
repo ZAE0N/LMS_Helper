@@ -37,11 +37,13 @@ Rules:
 3. Keep line breaks and list structure. Do not add explanations.
    A paragraph that starts with a marker like ⟦B3⟧ must keep that marker unchanged at its start.
 4. Proper nouns: use the official or widely used {lang} name when one exists
-   (for example 인하공업전문대학 → Inha Technical College). Keep Korean-only proper nouns that have
-   no widely used {lang} name (people's names, Korean place or service names) exactly as written in Korean.
-   If unsure, keep the Korean.
-5. Output only the translation."""
-PROMPT_VERSION = "p3"  # 위 규칙을 바꾸면 올려서 저장된 페이지 번역을 다시 만듦
+   (for example 인하공업전문대학 → Inha Technical College, 스킬라 → Scylla). Keep Korean-only proper nouns that have
+   no widely used {lang} name (people's names, Korean place, organization or service names) exactly as written in Korean.
+5. Translate every other Korean word, including words inside parentheses. Keep English that is already in the text
+   as it is: 정밀도(Precision) → the {lang} word for 정밀도 followed by (Precision). If that {lang} word is the same
+   as the English, write it only once.
+6. Output only the translation."""
+PROMPT_VERSION = "p5"  # 위 규칙을 바꾸면 올려서 저장된 페이지 번역을 다시 만듦
 
 USER = """Glossary:
 {glossary}
@@ -68,6 +70,16 @@ def _untranslated(out: str, terms: list[g.Term]) -> bool:
     return bool(letters) and sum(1 for c in letters if HANGUL.match(c)) / len(letters) > UNTRANSLATED_RATIO
 
 
+HANGUL_WORD = re.compile(r"[가-힣]+(?:\s*[가-힣]+)*")
+
+
+def _left_korean(out: str, terms: list[g.Term]) -> list[str]:
+    """번역문에 남은 한국어 낱말 (용어집에서 그대로 두거나 병기하라는 용어는 제외)"""
+    for t in terms:
+        out = out.replace(t.term, "")
+    return sorted(set(HANGUL_WORD.findall(out)))
+
+
 def translate_text(text: str, lang: str, terms_all: list[g.Term], llm: LLM) -> dict:
     if not HANGUL.search(text):
         return {"translated": text, "terms": [], "issues": []}
@@ -85,8 +97,12 @@ def translate_text(text: str, lang: str, terms_all: list[g.Term], llm: LLM) -> d
         return out, issues
 
     out, issues = run(USER.format(glossary=block, text=masked))
-    if issues:
-        out, issues = run(RETRY.format(issues="\n".join(f"- {i}" for i in issues), glossary=block, text=masked))
+    # 남은 한국어 낱말은 고칠 기회를 한 번 더 줌 (한국에만 있는 이름이면 그대로 둬도 됨, 문제로 표시하지 않음)
+    left = _left_korean(out, terms)
+    if issues or left:
+        notes = issues + ([f"Korean words left untranslated: {', '.join(left)}. Translate them unless they are "
+                           f"Korean-only names of people, places or organizations."] if left else [])
+        out, issues = run(RETRY.format(issues="\n".join(f"- {i}" for i in notes), glossary=block, text=masked))
 
     return {"translated": pr.restore(out, saved), "terms": [t.term for t in terms], "issues": issues}
 
