@@ -6,7 +6,7 @@ const Api = (() => {
       headers: { ...(options.body && !(options.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}), ...(options.headers || {}) }
     });
     const data = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+    if (!r.ok) throw Object.assign(new Error(data.detail || `HTTP ${r.status}`), { status: r.status, detail: data.detail });
     return data;
   }
   const post = (path, body) => request(path, { method: 'POST', body: JSON.stringify(body) });
@@ -14,11 +14,13 @@ const Api = (() => {
 
   return {
     request,
-    translateDocument(blob, name, lang, course) {
+    // password: 비밀번호 걸린 PDF일 때만 (저장하지 않고 이 요청에만 씀)
+    translateDocument(blob, name, lang, course, password) {
       const fd = new FormData();
       fd.append('file', blob, name || 'document.pdf');
       fd.append('lang', lang);
       if (course) fd.append('course', course);
+      if (password) fd.append('password', password);
       return request('/documents', { method: 'POST', body: fd });
     },
     getDocument: id => request(`/documents/${id}`),

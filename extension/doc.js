@@ -67,15 +67,108 @@ const DocView = (() => {
   const slideReady = p => p.image && p.size;
   const overlaid = p => p.background && p.blocks?.some(b => b.translated && b.translated !== b.text);
 
-  // 글 보기: 페이지 전체 번역 | 원문 (용어 표시)
+  // 글 보기: 페이지 전체 번역 | 원문 (용어 표시). 한국어는 원문만
   function textView(p) {
     const { t } = App;
     const empty = !(p.original || '').trim();
+    const or = h('article', { class: 'col original', lang: 'ko' }, h('h3', {}, t.original),
+      empty ? h('p', { class: 'muted' }, t.noText) : highlighted(clean(p.original), p.terms || []));
+    if (App.lang === 'ko') return h('div', { class: 'cols' }, or);
     return h('div', { class: 'cols side' },
       h('article', { class: 'col' }, h('h3', {}, t.translated),
         empty ? h('p', { class: 'muted' }, t.noText) : Object.assign(h('div', { class: 'text' }), { textContent: clean(p.translated) })),
-      h('article', { class: 'col original', lang: 'ko' }, h('h3', {}, t.original),
-        empty ? h('p', { class: 'muted' }, t.noText) : highlighted(clean(p.original), p.terms || [])));
+      or);
+  }
+
+  // 번역 검사(서버 issues)를 쉬운 문장으로
+  function issueText(s) {
+    const { t } = App;
+    const term = s.match(/^(?:KEEP 용어 누락|FIXED 번역어 미사용|BILINGUAL 원문 병기 누락): "([^"]+)"/);
+    if (/^코드 자리표시/.test(s)) return t.issueCode;
+    if (term) return t.issueTerm(term[1]);
+    if (/번역되지 않은 한국어/.test(s)) return t.issueKorean;
+    return `${t.issueOther}: ${s}`;
+  }
+
+  // 인쇄 → "PDF로 저장": 모든 페이지를 화면과 같은 슬라이드로 그려 A4 가로 한 장씩
+  const PRINT = { w: 1060, h: 730 };
+  async function printDoc(doc, translated) {
+    const { t } = App;
+    const note = h('div', { class: 'print-note' });
+    const root = h('div', { class: 'print-root', 'aria-hidden': 'true' });
+    document.body.append(root, note);
+    const slides = doc.pages.filter(slideReady).map(p => slide(doc, p, translated && overlaid(p)));
+    root.append(...slides.map(el => h('div', { class: 'print-page' }, el)));
+    for (const el of slides) {
+      const w = Number(el.dataset.w), hh = Number(el.dataset.h);
+      const scale = Math.min(PRINT.w / w, PRINT.h / hh);
+      el.style.width = `${w * scale}px`;
+      el.style.height = `${hh * scale}px`;
+      el.firstChild.style.transform = `scale(${scale})`;
+    }
+    slides.forEach(el => el.fitText());
+    const imgs = [...root.querySelectorAll('img')];
+    let done = 0;
+    note.textContent = t.preparingPdf(0, imgs.length);
+    await Promise.all(imgs.map(img => (img.complete && img.naturalWidth ? Promise.resolve() : new Promise(r => {
+      img.addEventListener('load', r, { once: true });
+      img.addEventListener('error', r, { once: true });
+    })).then(() => (note.textContent = t.preparingPdf(++done, imgs.length)))));
+    note.remove();
+    const cleanup = () => root.remove();
+    addEventListener('afterprint', cleanup, { once: true });
+    print();
+  }
+
+  // 교안 안에서 복습: 범위(이 쪽·전체·직접) · 유형 · 문제 수 → 같은 탭에서 복습 화면으로
+  function QuizPanel(doc, currentPage, onClose) {
+    const { t } = App;
+    const first = doc.pages[0].page;
+    const last = doc.pages[doc.pages.length - 1].page;
+    const picked = { multiple: true, short: true, matching: false };
+    let range = 'page';
+    const num = label => h('input', { type: 'number', min: first, max: last, class: 'num', 'aria-label': label });
+    const from = num(t.rangeFrom);
+    const to = num(t.rangeTo);
+    const custom = h('div', { class: 'range-row', hidden: true }, h('label', {}, t.rangeFrom, from), '~', h('label', {}, t.rangeTo, to));
+    const rangeBtns = [['page', t.thisPage], ['all', t.allPages], ['custom', t.custom]].map(([k, label]) =>
+      h('button', { type: 'button', 'data-r': k, onclick: () => { range = k; paint(); } }, label));
+    const chips = Object.entries(t.types).map(([k, label]) => h('button', { type: 'button', class: `chip-t${picked[k] ? ' on' : ''}`,
+      onclick: e => {
+        picked[k] = !picked[k];
+        if (!Object.values(picked).some(Boolean)) picked[k] = true;
+        e.currentTarget.classList.toggle('on', picked[k]);
+      } }, label));
+    const count = h('select', { class: 'count' }, [5, 10, 15, 20].map(n => h('option', { value: n }, String(n))));
+    const clamp = el => Math.max(first, Math.min(last, Number(el.value) || currentPage()));
+
+    function paint() {
+      rangeBtns.forEach(b => b.classList.toggle('on', b.dataset.r === range));
+      custom.hidden = range !== 'custom';
+      if (range === 'custom' && !from.value) from.value = to.value = currentPage();
+    }
+    function start() {
+      let [a, b] = range === 'page' ? [currentPage(), currentPage()] : [clamp(from), clamp(to)];
+      if (a > b) [a, b] = [b, a];
+      const q = new URLSearchParams(App.params);
+      q.delete('page');
+      q.set('mode', 'review');
+      q.set('types', Object.keys(picked).filter(k => picked[k]).join(','));
+      q.set('count', count.value);
+      if (range === 'all') q.delete('pages');
+      else q.set('pages', `${a}-${b}`);
+      q.set('from', currentPage());
+      location.href = `viewer.html?${q}`;
+    }
+    paint();
+    return h('aside', { class: 'side-panel quiz-panel' }, h('div', { class: 'panel-inner' },
+      h('div', { class: 'chat-head' }, h('strong', {}, t.quizTitle), h('span', { class: 'grow' }),
+        h('button', { type: 'button', class: 'icon', 'aria-label': t.close, title: t.close, onclick: () => onClose() }, '×')),
+      h('div', { class: 'quiz-form' },
+        h('p', { class: 'muted' }, t.range), h('div', { class: 'seg' }, rangeBtns), custom,
+        h('p', { class: 'muted' }, t.questionTypes), h('div', { class: 'chips' }, chips),
+        h('label', { class: 'count-row' }, t.count, count),
+        h('button', { type: 'button', class: 'btn', onclick: start }, t.start))));
   }
 
   function render(doc) {
@@ -83,19 +176,27 @@ const DocView = (() => {
     const app = document.getElementById('app');
     const pages = doc.pages;
     let current = 0;
-    let mode = pages.some(slideReady) ? 'tr' : 'text';
+    const korean = App.lang === 'ko'; // 한국어: 번역 없이 원문
+    let mode = !pages.some(slideReady) ? 'text' : korean ? 'or' : 'tr';
 
     const pick = h('select', { class: 'page-pick', 'aria-label': t.pages, onchange: e => go(Number(e.target.value)) },
       pages.map((p, i) => h('option', { value: i }, `${t.page} ${p.page} / ${pages[pages.length - 1].page}${p.issues?.length ? '  !' : ''}`)));
     const prev = h('button', { type: 'button', class: 'icon', title: t.prev, 'aria-label': t.prev, onclick: () => go(current - 1) }, '‹');
     const next = h('button', { type: 'button', class: 'icon', title: t.next, 'aria-label': t.next, onclick: () => go(current + 1) }, '›');
-    const modes = [['tr', t.translated], ['or', t.original], ['side', t.side], ['text', t.textMode]].map(([k, label]) =>
+    const modes = (korean ? [['or', t.original], ['text', t.textMode]] : [['tr', t.translated], ['or', t.original], ['side', t.side], ['text', t.textMode]]).map(([k, label]) =>
       h('button', { type: 'button', 'data-m': k, onclick: () => ((mode = k), paint()) }, label));
-    const warn = h('span', { class: 'warn-badge', title: t.issuePage, hidden: true }, '!');
+    const issues = h('div', { class: 'issue-pop', hidden: true });
+    const warn = h('button', { type: 'button', class: 'warn-badge', title: t.issuePage, 'aria-label': t.issuePage, hidden: true,
+      onclick: e => { e.stopPropagation(); issues.hidden = !issues.hidden; } }, '!');
+    document.addEventListener('click', e => !issues.contains(e.target) && (issues.hidden = true));
     const review = doc.needs_review?.length ? h('span', { class: 'warn-badge soft', title: t.needsReview }, 'i') : null;
     const stage = h('div', { class: 'stage' });
     const chat = Chat(doc, n => goPage(n), () => toggle('chat', false));
     const chatBtn = h('button', { type: 'button', class: 'chat-toggle', 'aria-expanded': 'false', onclick: () => toggle('chat') }, `💬 ${t.chatOpen}`);
+    const quiz = QuizPanel(doc, () => pages[current].page, () => toggle('quiz', false));
+    const quizBtn = h('button', { type: 'button', class: 'tool-btn quiz-toggle', 'aria-expanded': 'false', onclick: () => toggle('quiz') }, `📝 ${t.quizOpen}`);
+    const saveBtn = h('button', { type: 'button', class: 'tool-btn save-pdf', title: t.savePdf,
+      onclick: () => printDoc(doc, !korean && mode !== 'or') }, `⬇ ${t.savePdf}`);
     // 왼쪽 페이지 목록: 열면 슬라이드를 옆으로 밀고 들어옴 (GitHub 파일 목록처럼)
     // 목록 제목: 여러 페이지에 반복되는 단원 제목 대신 그 페이지의 첫 항목
     const headings = {};
@@ -114,11 +215,12 @@ const DocView = (() => {
       h('nav', { class: 'pg-list' }, items)));
     const listBtn = h('button', { type: 'button', class: 'icon panel-toggle', title: t.pages, 'aria-label': t.pages, 'aria-expanded': 'false', onclick: () => toggle('pages') });
     listBtn.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6 3v10" stroke="currentColor" stroke-width="1.4"/></svg>';
-    const panels = { pages: [list, listBtn], chat: [chat, chatBtn] };
+    const panels = { pages: [list, listBtn], chat: [chat, chatBtn], quiz: [quiz, quizBtn] };
 
     function toggle(name, open) {
       const [panel, btn] = panels[name];
       open = open ?? !panel.classList.contains('open');
+      if (open && (name === 'chat' || name === 'quiz')) toggle(name === 'chat' ? 'quiz' : 'chat', false); // 오른쪽 패널은 하나만
       panel.classList.toggle('open', open);
       btn.setAttribute('aria-expanded', String(open));
       btn.classList.toggle('on', open);
@@ -153,6 +255,8 @@ const DocView = (() => {
       prev.disabled = current === 0;
       next.disabled = current === pages.length - 1;
       warn.hidden = !p.issues?.length;
+      issues.hidden = true;
+      issues.replaceChildren(h('strong', {}, t.issueTitle), h('ul', {}, [...new Set((p.issues || []).map(issueText))].map(x => h('li', {}, x))));
       const m = slideReady(p) ? mode : 'text';
       stage.className = `stage ${m}`;
       if (m === 'text') {
@@ -161,7 +265,7 @@ const DocView = (() => {
         return;
       }
       // 덩어리별 번역이 없는 페이지: 원본 슬라이드 + 페이지 전체 번역
-      const fallback = m !== 'or' && !overlaid(p) && (p.translated || '').trim();
+      const fallback = !korean && m !== 'or' && !overlaid(p) && (p.translated || '').trim();
       const tr = overlaid(p) ? slide(doc, p, true) : slide(doc, p, false);
       const or = slide(doc, p, false);
       const shown = m === 'side' ? [tr, or] : m === 'tr' ? [tr] : [or];
@@ -180,19 +284,19 @@ const DocView = (() => {
     const goPage = n => go(pages.findIndex(p => p.page === n));
 
     const toolbar = h('div', { class: 'toolbar' },
-      h('nav', { class: 'crumbs' }, listBtn, prev, pick, next, warn, review),
+      h('nav', { class: 'crumbs' }, listBtn, prev, pick, next, h('span', { class: 'issue-wrap' }, warn, issues), review),
       h('div', { class: 'seg' }, modes),
-      chatBtn);
-    app.replaceChildren(h('div', { class: 'doc' }, toolbar, h('div', { class: 'doc-body' }, list, stage, chat)));
+      saveBtn, quizBtn, chatBtn);
+    app.replaceChildren(h('div', { class: 'doc' }, toolbar, h('div', { class: 'doc-body' }, list, stage, chat, quiz)));
     new ResizeObserver(() => layout()).observe(stage);
-    for (const name of Object.keys(panels)) {
+    for (const name of ['pages', 'chat']) {
       try { if (localStorage.getItem(`panel:${name}`)) toggle(name, true); } catch {}
     }
     addEventListener('keydown', e => {
       if (e.target.closest('textarea, input, select')) return;
       if (e.key === 'ArrowRight') go(current + 1);
       if (e.key === 'ArrowLeft') go(current - 1);
-      if (e.key === 'Escape') toggle('chat', false);
+      if (e.key === 'Escape') { toggle('chat', false); toggle('quiz', false); issues.hidden = true; }
     });
     const start = pages.findIndex(p => String(p.page) === App.params.get('page'));
     go(start >= 0 ? start : 0);

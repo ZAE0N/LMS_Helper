@@ -14,10 +14,19 @@ const QuizView = (() => {
     const { t, params } = App;
     const types = (params.get('types') || 'multiple').split(',').filter(k => t.types[k]);
     const count = Math.min(20, Math.max(1, Number(params.get('count')) || 5));
+    // pages=3-7 (교안 안 복습·서랍에서 지정). 교안 범위를 넘으면 맞춤
+    const first = doc.pages[0]?.page || 1;
+    const last = doc.pages[doc.pages.length - 1]?.page || 1;
+    const m = (params.get('pages') || '').match(/^(\d+)-(\d+)$/);
+    let pages = null;
+    if (m) {
+      const [a, b] = [Number(m[1]), Number(m[2])].map(n => Math.max(first, Math.min(last, n)));
+      pages = [Math.min(a, b), Math.max(a, b)];
+    }
     App.status(t.makingQuiz);
     let quiz;
     try {
-      quiz = await Api.quiz({ anon_id: App.anonId, doc_id: doc.doc_id, lang: App.lang, count, types, pages: null }, doc);
+      quiz = await Api.quiz({ anon_id: App.anonId, doc_id: doc.doc_id, lang: App.lang, count, types, pages }, doc);
       if (!quiz.questions?.length) throw new Error('empty');
     } catch (e) {
       App.status(`${t.quizError} (${e.message})`, { error: true, retry: () => render(doc) });
@@ -100,7 +109,9 @@ const QuizView = (() => {
       });
 
       app.replaceChildren(h('div', { class: 'quiz' },
-        h('div', { class: 'q-top' }, h('span', { class: 'muted' }, t.progress(i + 1, quiz.questions.length)), h('span', { class: 'tag' }, t.types[q.type] || q.type)),
+        h('a', { class: 'link back', href: pageLink(params.get('from')) }, t.backToMaterial),
+        h('div', { class: 'q-top' }, h('span', { class: 'muted' }, `${t.progress(i + 1, quiz.questions.length)}${pages ? ` · ${t.page} ${pages[0]}–${pages[1]}` : ''}`),
+          h('span', { class: 'tag' }, t.types[q.type] || q.type)),
         h('div', { class: 'bar-track' }, h('div', { class: 'bar-fill', style: `width:${(i / quiz.questions.length) * 100}%` })),
         h('h2', { class: 'q-text' }, q.question),
         body, h('div', { class: 'q-actions' }, check, nextBtn), feedback));
@@ -121,14 +132,14 @@ const QuizView = (() => {
         weak.length ? h('div', {}, h('h3', {}, t.wrongPages), h('div', { class: 'chips' }, weak.map(p => h('a', { class: 'chip', href: pageLink(p), target: '_blank' }, `${t.page} ${p}`)))) : null,
         h('div', { class: 'q-actions' },
           h('button', { type: 'button', class: 'btn', onclick: () => render(doc) }, t.retryQuiz),
-          h('a', { class: 'btn ghost', href: pageLink(), target: '_blank' }, t.openMaterial),
+          h('a', { class: 'btn ghost', href: pageLink(params.get('from')) }, t.backToMaterial),
           h('a', { class: 'btn ghost', href: 'viewer.html?mode=report', target: '_blank' }, t.openReport))));
     }
 
     // 같은 교안을 뷰어 모드로 (해당 페이지부터)
     function pageLink(page) {
       const q = new URLSearchParams(params);
-      ['mode', 'types', 'count'].forEach(k => q.delete(k));
+      ['mode', 'types', 'count', 'pages', 'from'].forEach(k => q.delete(k));
       if (page) q.set('page', page);
       return `viewer.html?${q}`;
     }

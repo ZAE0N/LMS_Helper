@@ -22,6 +22,10 @@ const App = (() => {
   };
 
   class UserError extends Error {}
+  // 비밀번호가 필요한 PDF (wrong: 틀린 비밀번호를 넣었음)
+  class PasswordError extends Error {
+    constructor(wrong) { super(wrong ? 'PDF_PASSWORD_WRONG' : 'PDF_PASSWORD_REQUIRED'); this.wrong = wrong; }
+  }
 
   // 상태 표시 (불러오는 중 / 오류 + 다시 시도)
   function status(text, { retry, error } = {}) {
@@ -83,7 +87,7 @@ const App = (() => {
 
   // 같은 파일·같은 수정 시각·같은 언어면 서버에 저장된 번역을 다시 씀
   // force: 저장된 번역이 있어도 파일을 다시 보냄 (서버에 원본이 없을 때, 예: PDF 보기)
-  async function loadDoc(onStep, { force = false } = {}) {
+  async function loadDoc(onStep, { force = false, password = null } = {}) {
     const { t, lang } = App;
     const course = params.get('course');
     const file = params.get('file');
@@ -103,7 +107,9 @@ const App = (() => {
     onStep(t.step.translate);
     const name = meta.name || params.get('name') || 'document.pdf';
     const glossary = CONFIG.GLOSSARY[params.get('courseName')] || null;
-    const doc = await Api.translateDocument(blob, name, lang, glossary).catch(e => {
+    const doc = await Api.translateDocument(blob, name, lang, glossary, password).catch(e => {
+      if (e.status === 401 && /^PDF_PASSWORD_(REQUIRED|WRONG)$/.test(e.detail)) throw new PasswordError(e.detail.endsWith('WRONG'));
+      if (/encrypted/i.test(e.message)) throw new UserError(t.errPasswordUnsupported); // 서버가 아직 비밀번호를 지원하지 않을 때
       throw new UserError(e instanceof TypeError ? t.errServer : `${t.errServerFail} (${e.message})`); // TypeError = 연결 자체 실패
     });
     await store.set({
@@ -113,5 +119,17 @@ const App = (() => {
     return doc;
   }
 
-  return { params, h, store, status, loadDoc, UserError, lang: 'en', t: null, anonId: null };
+  // 비밀번호 입력 (입력값은 이 요청에만 쓰고 저장하지 않음)
+  function askPassword(wrong, onSubmit) {
+    const { t } = App;
+    const input = h('input', { type: 'password', class: 'pw', autocomplete: 'off', 'aria-label': t.password, placeholder: t.password });
+    const submit = () => input.value && onSubmit(input.value);
+    input.addEventListener('keydown', e => e.key === 'Enter' && submit());
+    document.getElementById('app').replaceChildren(h('div', { class: 'status' },
+      h('p', { class: wrong ? 'bad-text' : '' }, wrong ? t.errPasswordWrong : t.errPassword),
+      h('div', { class: 'pw-row' }, input, h('button', { type: 'button', class: 'btn', onclick: submit }, t.open))));
+    input.focus();
+  }
+
+  return { params, h, store, status, loadDoc, askPassword, UserError, PasswordError, lang: 'en', t: null, anonId: null };
 })();

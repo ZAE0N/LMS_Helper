@@ -50,8 +50,8 @@ main { flex: 1; min-height: 0; }
 .seg { margin-left: auto; display: flex; background: #fff; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .seg button { border: 0; background: none; padding: 4px 11px; cursor: pointer; font-size: 12.5px; }
 .seg button.on { background: var(--accent); color: #fff; }
-.chat-toggle { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 4px 12px; cursor: pointer; font-size: 12.5px; white-space: nowrap; }
-.chat-toggle.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.chat-toggle, .tool-btn { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 4px 12px; cursor: pointer; font-size: 12.5px; white-space: nowrap; }
+.chat-toggle.on, .tool-btn.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .doc-body { flex: 1; min-height: 0; display: flex; overflow: hidden; }
 .stage { flex: 1; min-width: 0; height: 100%; overflow: auto; }
 /* 옆 패널: 열면 슬라이드를 밀고 들어옴 */
@@ -155,3 +155,42 @@ mark { background: #fff3c4; border-radius: 3px; padding: 0 1px; }
   .cols.side { grid-template-columns: 1fr; }
   .seg button { padding: 4px 7px; }
 }
+.pw-row { display: flex; gap: 8px; }
+.pw { border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; min-width: 220px; }
+
+/* 교안 안 복습 패널 */
+.quiz-panel { border-left: 1px solid transparent; }
+.quiz-panel.open { width: min(340px, 45vw); border-left-color: var(--line); }
+.quiz-panel .panel-inner { width: min(340px, 45vw); }
+.quiz-form { padding: 14px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+.quiz-form .seg { margin-left: 0; align-self: flex-start; }
+.range-row { display: flex; align-items: center; gap: 8px; }
+.range-row label { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.num { width: 64px; border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+.chip-t { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 3px 12px; cursor: pointer; font-size: 13px; }
+.chip-t.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.count-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.count { border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; background: #fff; }
+
+/* 번역 검사 이유 */
+.issue-wrap { position: relative; display: inline-flex; }
+button.warn-badge { border: 0; padding: 0; cursor: pointer; }
+.issue-pop { position: absolute; top: 26px; left: 0; z-index: 20; width: 320px; background: #fff; border: 1px solid var(--line);
+  border-radius: 10px; box-shadow: 0 8px 24px rgba(16, 24, 40, .14); padding: 10px 14px; font-size: 13px; }
+.issue-pop ul { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+
+/* PDF 저장 (인쇄) */
+.print-root { position: fixed; left: -100000px; top: 0; }
+.print-note { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: rgba(17, 24, 39, .92); color: #fff;
+  border-radius: 999px; padding: 8px 16px; font-size: 13px; z-index: 50; }
+@page { size: A4 landscape; margin: 8mm; }
+@media print {
+  body > *:not(.print-root) { display: none !important; }
+  body { background: #fff; display: block; }
+  .print-root { position: static; }
+  .print-page { break-after: page; display: flex; justify-content: center; }
+  .print-page:last-child { break-after: auto; }
+  .print-page .slide { box-shadow: none; border-radius: 0; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+.quiz .back { align-self: flex-start; font-size: 13px; text-decoration: none; }
