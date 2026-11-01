@@ -1,14 +1,14 @@
-"""교안 페이지를 '정리된 교재' 형태로 읽기: 제목 · 글머리표(단계) · 문장 · 코드 · 그림.
+"""교안 페이지 읽기: 글 덩어리(제목 · 글머리표 · 문장 · 코드 · 그림 속 글자 · 코드 주석)와 그 위치.
 
+- 확장은 글자를 지운 페이지 그림(배경) 위 같은 자리에 번역문을 올려 원본 슬라이드 모양을 유지한다.
 - 슬라이드 PDF는 글자를 하나씩 배치해 띄어쓰기가 빠지는 경우가 많아 글자 간격으로 다시 넣는다.
-- 모든 페이지에 반복되는 머리·꼬리 장식(로고, 학교명, 과목명 띠)은 뺀다.
-- 그림·도표는 영역을 잘라 그림으로 쓴다. 도형으로 그린 그림 안의 글자(labels)는 번역해서 그 자리에 다시 넣고,
-  통째로 붙인 그림(사진 등)은 별도로(vision) 처리한다.
+- 모든 페이지에 반복되는 머리·꼬리 장식(로고, 학교명, 과목명 띠)은 그대로 둔다(번역하지 않음).
 """
 import re
 import statistics
 from collections import Counter
 from dataclasses import dataclass, field
+from threading import Lock
 
 import pymupdf
 
@@ -16,6 +16,11 @@ SYMBOL_FONT = re.compile(r'wingdings|symbol|webdings|dingbat', re.I)
 SYMBOL = re.compile(r'^[-□▪●•‣⁃➢✓✔▶►→\-–·]+')
 MONO = re.compile(r'cour|mono|consol|d2coding|menlo|fixed', re.I)
 MARK = re.compile(r'⟦B(\d+)⟧')
+BOLD = re.compile(r'bold|black|heavy|extrab', re.I)
+HANGUL = re.compile(r'[가-힣]')
+# 코드 주석 시작: // (주소의 :// 제외), # (#include·#fff 제외), /*, <!--, 여러 줄 주석의 * 줄
+COMMENT = re.compile(r'(?<![:\w"\'])//+|(?<![\w&])#+(?![A-Za-z0-9_{])|/\*+|<!--|^\s*\*+(?!/)')
+COMMENT_END = re.compile(r'\s*(\*/|-->)\s*$')
 URL = re.compile(r'https?://\S+|www\.\S+')
 TOP, BOTTOM = 0.15, 0.88  # 머리 장식 / 꼬리 장식 경계 (페이지 높이 비율)
 FOOTER = 0.9
@@ -52,9 +57,19 @@ def find_template(doc: pymupdf.Document) -> Template:
     return Template(pick(xrefs), pick(shapes), pick(lines))
 
 
-def line_parts(line: dict) -> tuple[bool, str]:
-    """(글머리표로 시작하는지, 글). 글자 사이 간격이 글자 크기의 18%보다 넓으면 띄어쓰기로 봄"""
-    out, last, bullet, started = '', None, False, False
+def line_parts(line: dict) -> tuple[bool, str, list]:
+    """(글머리표로 시작하는지, 글, 글자별 상자). 상자[i]는 글[i]의 위치(띄어쓰기는 None).
+    글자 사이 간격이 글자 크기의 18%보다 넓으면 띄어쓰기로 봄"""
+    chars: list[tuple[str, tuple | None]] = []
+    last, bullet, started = None, False, False
+
+    def add(c: str, box: tuple | None) -> None:
+        if c.isspace():
+            if chars and chars[-1][0] != ' ':
+                chars.append((' ', None))
+        else:
+            chars.append((c, box))
+
     for span in line['spans']:
         symbol = bool(SYMBOL_FONT.search(span['font']))
         for ch in span.get('chars', []):
@@ -62,18 +77,47 @@ def line_parts(line: dict) -> tuple[bool, str]:
                 if not started:
                     bullet = True
                 elif not ch['c'].isspace():
-                    out += ' → '
+                    add(' ', None), add('→', tuple(ch['bbox'])), add(' ', None)
                 last = ch['bbox'][2]
                 continue
-            if last is not None and ch['bbox'][0] - last > span['size'] * 0.18 and not out.endswith(' '):
-                out += ' '
-            out += ch['c']
+            if last is not None and ch['bbox'][0] - last > span['size'] * 0.18:
+                add(' ', None)
+            add(ch['c'], tuple(ch['bbox']))
             started = started or not ch['c'].isspace()
             last = ch['bbox'][2]
-    text = re.sub(r'\s+', ' ', out).strip()
+    while chars and chars[0][0] == ' ':
+        chars.pop(0)
+    while chars and chars[-1][0] == ' ':
+        chars.pop()
+    text = ''.join(c for c, _ in chars)
     if not bullet and (m := SYMBOL.match(text)) and len(text) > len(m.group(0)):
-        bullet, text = True, text[m.end():].strip()
-    return bullet, text
+        chars = chars[m.end():]
+        while chars and chars[0][0] == ' ':
+            chars.pop(0)
+        bullet, text = True, ''.join(c for c, _ in chars)
+    return bullet, text, [b for _, b in chars]
+
+
+def _union(boxes: list) -> pymupdf.Rect:
+    rect = pymupdf.Rect()
+    for b in boxes:
+        if b is not None:
+            rect |= pymupdf.Rect(b)
+    return rect
+
+
+def _r(rect) -> list[float]:
+    return [round(v, 1) for v in rect]
+
+
+def comment_part(text: str) -> tuple[int, int] | None:
+    """코드 줄에서 한글이 있는 주석 내용의 (시작, 끝). 주석 기호(//, # …)는 원문 유지"""
+    for m in COMMENT.finditer(text):
+        if HANGUL.search(text, m.end()):
+            start = len(text) - len(text[m.end():].lstrip())
+            end = (e.start() if (e := COMMENT_END.search(text, start)) else len(text))
+            return (start, end) if end > start else None
+    return None
 
 
 def figure_regions(page: pymupdf.Page, template: Template) -> list[dict]:
@@ -133,20 +177,29 @@ def _columns(items: list[dict], width: float, height: float) -> list[dict]:
 def _merge_labels(labels: list[dict]) -> list[dict]:
     """그림 속 한 칸에 두 줄로 적힌 글("이전 블록의" + "Hash")은 한 글로 합쳐 번역"""
     out: list[dict] = []
-    for label in sorted(labels, key=lambda x: (x['rect'][1], x['rect'][0])):
-        r = pymupdf.Rect(label['rect'])
+    for label in sorted(labels, key=lambda x: (x['rect'].y0, x['rect'].x0)):
+        r = label['rect']
         prev = next((o for o in reversed(out) if abs(o['size'] - label['size']) < 1 and o['text'] != label['text']
-                     and 0 <= r.y0 - o['rect'][3] < label['size'] * 0.6
-                     and min(r.x1, o['rect'][2]) - max(r.x0, o['rect'][0]) > 0.5 * min(r.width, o['rect'][2] - o['rect'][0])), None)
+                     and 0 <= r.y0 - o['rect'].y1 < label['size'] * 0.6
+                     and min(r.x1, o['rect'].x1) - max(r.x0, o['rect'].x0) > 0.5 * min(r.width, o['rect'].width)), None)
         if prev is None:
-            out.append(dict(label))
+            out.append(dict(label, lines=list(label['lines'])))
         else:
             prev['text'] += ' ' + label['text']
-            prev['rect'] = [round(v, 1) for v in pymupdf.Rect(prev['rect']) | r]
+            prev['rect'] = prev['rect'] | r
+            prev['lines'] += label['lines']
     return out
 
 
-def page_blocks(page: pymupdf.Page, template: Template | None = None) -> list[dict]:
+def _style(line: dict) -> dict:
+    main = max(line['spans'], key=lambda s: len(s.get('chars', [])))
+    return {'color': f"#{main['color']:06x}", 'bold': bool(main['flags'] & 16 or BOLD.search(main['font']))}
+
+
+def page_blocks(page: pymupdf.Page, template: Template | None = None) -> tuple[list[dict], list[dict]]:
+    """(blocks, figures). 블록: {type, level, text, rect, box, size, color, bold, lines}
+    - type: heading | bullet | text | code | label(그림 속 글자) | comment(코드 속 한글 주석)
+    - box: 번역문이 들어갈 수 있는 자리, lines: 지울 원문 줄 위치"""
     template = template or Template()
     width, height = page.rect.width, page.rect.height
     figures = figure_regions(page, template)
@@ -160,51 +213,57 @@ def page_blocks(page: pymupdf.Page, template: Template | None = None) -> list[di
         for line in block['lines']:
             box = pymupdf.Rect(line['bbox'])
             raw = ''.join(c['c'] for s in line['spans'] for c in s.get('chars', []))
-            if box.y0 > FOOTER * height or _line_key(raw, box.y0) in template.lines:
-                continue
-            bullet, text = line_parts(line)
             size = max(s['size'] for s in line['spans'])
+            heading = box.y0 < 0.2 * height and size >= 18  # 여러 페이지에 반복되는 단원 제목도 번역
+            if box.y0 > FOOTER * height or _line_key(raw, box.y0) in template.lines and not heading:
+                continue
+            bullet, text, boxes = line_parts(line)
             if not text:
                 if bullet:
                     marks.append((box.y0, box.x1, size))
                 continue
+            rect = _union(boxes)
+            base = {'text': text, 'rect': rect, 'size': size, 'lines': [rect], **_style(line)}
             owner = next((f for f in figures if (f['rect'] & box).get_area() > box.get_area() * 0.5), None)
-            if owner is not None:  # 그림 안의 글자 → 그림 위에 번역해서 다시 그림
-                main = max(line['spans'], key=lambda s: len(s.get('chars', [])))
-                owner['labels'].append({'text': text, 'rect': [round(v, 1) for v in box], 'size': round(size, 1),
-                                        'color': main['color']})
+            if owner is not None:  # 그림 안의 글자 → 그림 위 같은 자리에 번역
+                owner['labels'].append(base)
                 continue
             bullet = bullet or any(abs(y - box.y0) < size * 0.6 and x1 <= box.x0 + 2 and box.x0 - x1 < 40 for y, x1, _ in marks)
             # 코드 = 글머리표 없이 고정폭 글꼴로 시작하는 줄 (주석 속 한글은 다른 글꼴로 대체되므로 첫 글자로 판단)
             first = next((s for s in line['spans'] if any(not c['c'].isspace() for c in s.get('chars', []))
                           and not SYMBOL_FONT.search(s['font'])), None)
             mono = not bullet and first is not None and MONO.search(first['font']) is not None
-            items.append({'type': 'text', 'y': box.y0, 'x': box.x0, 'text': text, 'bullet': bullet, 'size': size,
-                          'mono': mono})
+            comments = []
+            if mono and (part := comment_part(text)):
+                crect = _union(boxes[part[0]:part[1]])
+                comments.append({**base, 'text': text[part[0]:part[1]].strip(), 'rect': crect, 'lines': [crect]})
+            items.append({'type': 'text', 'y': box.y0, 'x': box.x0, 'bullet': bullet, 'mono': mono,
+                          'comments': comments, **base})
     items.sort(key=lambda it: (round(it['y'] / 4), it['x']))
     items = _columns(items, width, height)
 
     merged: list[dict] = []
     for it in items:
         prev = merged[-1] if merged else None
+        join = None
         if prev and it['type'] == prev['type'] == 'text' and it['mono'] and prev['mono'] \
                 and 0 < it['y'] - prev['last_y'] < prev['size'] * 2.2:
-            prev['text'] += '\n' + it['text']  # 이어지는 코드 줄은 한 덩어리
-            prev['last_y'] = it['y']
-            continue
-        if prev and it['type'] == prev['type'] == 'text' and not it['mono'] and not prev['mono'] \
+            join = '\n'  # 이어지는 코드 줄은 한 덩어리
+        elif prev and it['type'] == prev['type'] == 'text' and not it['mono'] and not prev['mono'] \
                 and abs(it['size'] - prev['size']) < 1 and not it['bullet']:
             same_line = abs(it['y'] - prev['y']) < 4
             follows = 0 < it['y'] - prev['last_y'] < prev['size'] * 1.6 and it['x'] >= prev['x'] - 2
-            if same_line or follows:
-                prev['text'] += ' ' + it['text']
-                prev['last_y'] = it['y']
-                continue
+            join = ' ' if same_line or follows else None
+        if join:
+            prev['text'] += join + it['text']
+            prev['rect'] = prev['rect'] | it['rect']
+            prev['lines'] += it['lines']
+            prev['comments'] += it['comments']
+            prev['last_y'] = it['y']
+            continue
         it['last_y'] = it['y']
         merged.append(it)
 
-    for f in figures:
-        f['labels'] = _merge_labels(f['labels'])
     texts = [it for it in merged if it['type'] == 'text']
     top = [it for it in texts if it['y'] < 0.2 * height and not it['bullet'] and not it['mono']]
     title = max(top, key=lambda it: it['size']) if top else None
@@ -216,37 +275,75 @@ def page_blocks(page: pymupdf.Page, template: Template | None = None) -> list[di
             and texts[0]['size'] > body:
         title = texts[0]  # 머리 장식을 뺀 뒤 맨 위의 가장 큰 항목 (예: "□ Transaction")
     lefts = sorted({round(it['x']) for it in texts if not it['mono'] and it is not title})
+
+    def block(kind: str, level: int, it: dict) -> dict:
+        return {'type': kind, 'level': level, 'text': it['text'], 'rect': it['rect'], 'size': round(it['size'], 1),
+                'color': it['color'], 'bold': it['bold'], 'lines': it['lines']}
+
     blocks = []
     for it in merged:
         if it['type'] == 'image':
-            f = it['figure']
-            blocks.append({'type': 'image', 'rect': [round(v, 1) for v in f['rect']],
-                           'width': round(min(1.0, f['rect'].width / width), 3), 'raster': f['raster'] and not f['labels'],
-                           'labels': f['labels']})
+            blocks += [block('label', 0, label) for label in _merge_labels(it['figure']['labels'])]
             continue
-        if it is title:
-            blocks.append({'type': 'heading', 'level': 0, 'text': it['text']})
-            continue
-        level = min(3, sum(1 for x in lefts if x < it['x'] - 8))
-        kind = 'code' if it['mono'] else 'bullet' if it['bullet'] else 'text'
-        blocks.append({'type': kind, 'level': level, 'text': it['text']})
-    return blocks
+        level = 0 if it is title else min(3, sum(1 for x in lefts if x < it['x'] - 8))
+        kind = 'heading' if it is title else 'code' if it['mono'] else 'bullet' if it['bullet'] else 'text'
+        blocks.append(block(kind, level, it))
+        blocks += [dict(block('comment', level, c), limit=it['rect'].x1 + 4) for c in it['comments']]  # 코드 영역 안에서만
+    _boxes(blocks, figures, width, height)
+    for b in blocks:
+        b['rect'] = _r(b['rect'])
+        b['lines'] = [_r(r) for r in b['lines']]
+    return blocks, [{'rect': _r(f['rect']), 'raster': f['raster']} for f in figures]
+
+
+def label_box(r: pymupdf.Rect, size: float) -> pymupdf.Rect:
+    return pymupdf.Rect(r.x0 - 2, r.y0 - size * 0.3, r.x1 + 2, r.y1 + size * 0.3)
+
+
+def _boxes(blocks: list[dict], figures: list[dict], width: float, height: float) -> None:
+    """번역문이 들어갈 자리(box). 글 덩어리는 오른쪽·아래로 다른 글이나 그림을 만날 때까지 넓힘
+    (번역문은 보통 한국어보다 길어서). 그림 속 글자는 원래 칸, 코드 주석은 한 줄"""
+    others = [(b, b['rect']) for b in blocks if b['type'] != 'comment'] + [(None, f['rect']) for f in figures]
+    for b in blocks:
+        r, s = b['rect'], b['size']
+        if b['type'] == 'label':
+            b['align'] = 'center'
+            box = label_box(r, s)
+        elif b['type'] == 'comment':
+            box = pymupdf.Rect(r.x0, r.y0, max(b.pop('limit', width - 6), r.x1), r.y1 + 1)
+        elif b['type'] in ('heading', 'text') and abs((r.x0 + r.x1) / 2 - width / 2) < width * 0.04 and r.x0 > width * 0.12:
+            # 가운데 정렬된 제목·부제목: 가운데를 기준으로 양쪽으로 넓힘
+            cx = (r.x0 + r.x1) / 2
+            left = max([o.x1 + 6 for x, o in others if x is not b and o.x1 <= r.x0 + 2
+                        and o.y0 < r.y1 and o.y1 > r.y0] + [width * 0.06])
+            right = min([o.x0 - 6 for x, o in others if x is not b and o.x0 >= r.x1 - 2
+                         and o.y0 < r.y1 and o.y1 > r.y0] + [width * 0.94])
+            half = max(min(cx - left, right - cx), r.width / 2)
+            bottom = min([o.y0 - 2 for x, o in others if x is not b and o.y0 >= r.y1 - 2
+                          and o.x0 < cx + half and o.x1 > cx - half] + [FOOTER * height])
+            box = pymupdf.Rect(cx - half, r.y0, cx + half, max(bottom, r.y1))
+            b['align'] = 'center'
+        else:
+            margin = max(min(r.x0, width * 0.06), 10)
+            right = min([o.x0 - 6 for x, o in others if x is not b and o.x0 >= r.x1 - 2
+                         and o.y0 < r.y1 and o.y1 > r.y0] + [width - margin])
+            right = max(right, r.x1)
+            bottom = min([o.y0 - 2 for x, o in others if x is not b and o.y0 >= r.y1 - 2
+                          and o.x0 < right and o.x1 > r.x0] + [FOOTER * height])
+            box = pymupdf.Rect(r.x0, r.y0, right, max(bottom, r.y1))
+        b['box'] = _r(box)
 
 
 def analyze_pdf(data: bytes) -> list[dict]:
-    """[{page, text, blocks}] — text는 띄어쓰기를 되살린 페이지 전체 글 (챗봇·복습에 사용)"""
+    """[{page, text, size, blocks, figures}] — text는 띄어쓰기를 되살린 페이지 전체 글 (챗봇·복습에 사용)"""
     pages = []
     with pymupdf.open(stream=data, filetype='pdf') as doc:
         template = find_template(doc)
         for i, page in enumerate(doc):
-            blocks = page_blocks(page, template)
-            lines = []
-            for b in blocks:
-                if b['type'] == 'image':
-                    lines += [label['text'] for label in b['labels']]
-                else:
-                    lines.append(b['text'])
-            pages.append({'page': i + 1, 'text': '\n'.join(lines), 'blocks': blocks})
+            blocks, figures = page_blocks(page, template)
+            text = '\n'.join(b['text'] for b in blocks if b['type'] != 'comment')
+            pages.append({'page': i + 1, 'text': text, 'size': [round(page.rect.width, 1), round(page.rect.height, 1)],
+                          'blocks': blocks, 'figures': figures})
     return pages
 
 
@@ -255,56 +352,64 @@ def needs_translation(text: str) -> bool:
     return bool(re.search(r'[^\W\d_]{2,}', URL.sub('', text)))
 
 
-def units(blocks: list[dict]) -> list[tuple[int, int | None, str]]:
-    """번역 단위 (블록 번호, 그림 글자 번호 또는 None, 글). 코드는 원문 유지"""
-    out = []
-    for i, b in enumerate(blocks):
-        if b['type'] in ('heading', 'bullet', 'text') and needs_translation(b['text']):
-            out.append((i, None, b['text']))
-        elif b['type'] == 'image':
-            out += [(i, j, label['text']) for j, label in enumerate(b['labels']) if needs_translation(label['text'])]
-    return out
+TRANSLATABLE = ('heading', 'bullet', 'text', 'label', 'comment')
+
+
+def units(blocks: list[dict]) -> list[tuple[int, str]]:
+    """번역 단위 (블록 번호, 글). 코드는 원문 유지 (한글 주석만 따로 번역)"""
+    return [(i, b['text']) for i, b in enumerate(blocks) if b['type'] in TRANSLATABLE and needs_translation(b['text'])]
 
 
 def marked_text(blocks: list[dict]) -> str:
     """번역 단위마다 ⟦B번호⟧ 표시를 붙여 한 번에 번역"""
-    return '\n\n'.join(f'⟦B{n}⟧ {text}' for n, (_, _, text) in enumerate(units(blocks)))
+    return '\n\n'.join(f'⟦B{n}⟧ {text}' for n, (_, text) in enumerate(units(blocks)))
 
 
 def apply_marked(translated: str, blocks: list[dict]) -> bool:
-    """번역 결과를 블록(translated)·그림 글자(labels[].translated)에 넣음. 표시가 어긋나면 False"""
+    """번역 결과를 블록의 translated에 넣음. 표시가 어긋나면 False"""
     wanted = units(blocks)
     parts = MARK.split(translated)
     found = {int(parts[i]): parts[i + 1].strip() for i in range(1, len(parts) - 1, 2)}
     if sorted(found) != list(range(len(wanted))) or not all(found.values()):
         return False
     for b in blocks:
-        if b['type'] in ('heading', 'bullet', 'text'):
+        if b['type'] in TRANSLATABLE:
             b['translated'] = b['text']  # 번역 대상이 아니면 원문 그대로
-        elif b['type'] == 'image':
-            for label in b['labels']:
-                label['translated'] = label['text']
-    for n, (i, j, _) in enumerate(wanted):
-        if j is None:
-            blocks[i]['translated'] = found[n]
-        else:
-            blocks[i]['labels'][j]['translated'] = found[n]
+    for n, (i, _) in enumerate(wanted):
+        blocks[i]['translated'] = found[n]
     return True
 
 
-def render_figure(data: bytes, page: int, rect: list[float], labels: list[dict] | None = None, dpi: int = 130) -> bytes:
-    """그림 영역 PNG. labels에 번역이 있으면 원래 글자를 지우고 같은 자리에 번역문을 넣어 그림"""
-    with pymupdf.open(stream=data, filetype='pdf') as doc:
+_RENDER_LOCK = Lock()  # PyMuPDF는 여러 스레드에서 동시에 쓰면 안전하지 않음
+
+
+def render_page(data: bytes, page: int, erase: list[list[float]], fills: list[tuple[list[float], str]] = (),
+                zoom: float = 2.0) -> tuple[bytes, bytes | None]:
+    """(원본 페이지 JPEG, 번역할 글자를 지운 배경 JPEG 또는 None).
+    배경에서는 글자를 감싸는 그림자 그림도 지움. 그림·도형·글머리 기호·장식은 남김.
+    fills: 그림 속 글자(OCR) 자리를 둘레 색으로 덮음"""
+    with _RENDER_LOCK, pymupdf.open(stream=data, filetype='pdf') as doc:
         p = doc[page - 1]
-        todo = [label for label in labels or [] if label.get('translated') and label['translated'] != label['text']]
-        for label in todo:
-            p.add_redact_annot(pymupdf.Rect(label['rect']), fill=False)
-        if todo:
+        matrix = pymupdf.Matrix(zoom, zoom)
+        original = p.get_pixmap(matrix=matrix).tobytes('jpeg', jpg_quality=85)
+        if not erase and not fills:
+            return original, None
+        rects = [pymupdf.Rect(r) for r in erase]
+        shadows: dict[int, bool] = {}
+        for info in p.get_image_info(xrefs=True):
+            image = pymupdf.Rect(info['bbox'])
+            if info['xref'] <= 0:
+                continue
+            shadow = any((image & r).get_area() > 0.8 * r.get_area() and image.height < r.height * 3
+                         and image.width < p.rect.width * 0.5 for r in rects)
+            shadows[info['xref']] = shadows.get(info['xref'], True) and shadow
+        for r in rects:  # 위아래 줄·글머리 기호를 건드리지 않게 줄 안쪽만
+            p.add_redact_annot(pymupdf.Rect(r.x0 + 1, r.y0 + r.height * 0.25, r.x1 - 0.5, r.y1 - r.height * 0.25), fill=False)
+        if rects:
             p.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE, graphics=pymupdf.PDF_REDACT_LINE_ART_NONE)
-        for label in todo:
-            r = pymupdf.Rect(label['rect'])
-            box = pymupdf.Rect(r.x0 - 2, r.y0 - 1, r.x1 + 2, r.y1 + label['size'] * 0.4)
-            css = (f"* {{font-family: sans-serif; font-size: {label['size']}px; color: #{label['color']:06x}; "
-                   'line-height: 1.05; text-align: center;}}')
-            p.insert_htmlbox(box, label['translated'], css=css, scale_low=0.3)
-        return p.get_pixmap(clip=pymupdf.Rect(rect), dpi=dpi).tobytes('png')
+        for xref, shadow in shadows.items():
+            if shadow:
+                p.delete_image(xref)
+        for rect, color in fills:
+            p.draw_rect(pymupdf.Rect(rect), color=None, fill=tuple(int(color[i:i + 2], 16) / 255 for i in (1, 3, 5)))
+        return original, p.get_pixmap(matrix=matrix).tobytes('jpeg', jpg_quality=85)

@@ -117,11 +117,9 @@ def get_document(doc_id: str):
 @app.get("/documents/{doc_id}/figures/{name}")
 def get_figure(doc_id: str, name: str):
     path = service.figures_dir(doc_id) / name
-    if not re.fullmatch(r"[0-9a-f]{64}", doc_id) or not re.fullmatch(r"\d+-\d+(\.tr)?\.(png|svg)", name) or not path.exists():
+    if not re.fullmatch(r"[0-9a-f]{64}", doc_id) or not re.fullmatch(r"\d+(-bg)?\.jpg", name) or not path.exists():
         raise HTTPException(404, "그림 없음")
-    media = 'image/svg+xml' if name.endswith('.svg') else 'image/png'
-    return FileResponse(path, media_type=media, headers={'Cache-Control': 'max-age=86400',
-                                                         'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'"})
+    return FileResponse(path, media_type='image/jpeg', headers={'Cache-Control': 'max-age=86400'})
 
 
 @app.get("/documents/{doc_id}/pdf")
