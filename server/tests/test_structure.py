@@ -246,3 +246,16 @@ def test_korean_in_code_keeps_context_of_strings_and_html():
 def test_single_korean_letter_in_figure_is_translated():
     blocks = [{'type': 'label', 'text': '홀'}, {'type': 'bullet', 'text': '가'}, {'type': 'label', 'text': '7'}]
     assert marked_text(blocks) == '⟦B0⟧ 홀'
+
+
+def test_korean_keeps_original_without_calling_llm(setup, monkeypatch):
+    client = setup
+
+    def no_llm(*args):
+        raise AssertionError('ko must not translate')
+    monkeypatch.setattr(service, 'translate_page', no_llm)
+    doc = client.post('/documents', files={'file': ('a.pdf', slide_pdf())}, data={'lang': 'ko'}).json()
+    page = doc['pages'][0]
+    assert doc['lang'] == 'ko' and page['translated'] == page['original'] and 'background' not in page
+    assert all('translated' not in b for b in page['blocks'])
+    assert client.get(f"/documents/{doc['doc_id']}/figures/{page['image']}").status_code == 200

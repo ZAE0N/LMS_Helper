@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, model_validator
 
+from .translate import LANG_NAMES, Lang
 from . import service
 from .grounding import locate
 from .llm import LLM
@@ -53,7 +54,7 @@ class QuizDocumentNotFound(Exception):
 class QuizRequest(BaseModel):
     anon_id: UUID
     doc_id: str = Field(pattern=r'^[0-9a-f]{64}$')
-    lang: Literal['en', 'ru']
+    lang: Lang
     count: int = Field(default=5, strict=True, ge=1, le=20)
     types: list[QuizType] = Field(default_factory=lambda: ['multiple', 'short', 'matching'], min_length=1, max_length=3)
     pages: tuple[Annotated[int, Field(strict=True, ge=1)], Annotated[int, Field(strict=True, ge=1)]] | None = None
@@ -250,7 +251,7 @@ def generate_quiz(request: QuizRequest, llm_factory: Callable[[], LLM]) -> QuizR
     if document is None:
         raise QuizDocumentNotFound()
     sources = source_pages(document, request)
-    system = SYSTEM.format(language='Russian' if request.lang == 'ru' else 'English')
+    system = SYSTEM.format(language=LANG_NAMES[request.lang])
     payload = {'count': request.count, 'types': request.types, 'pages': sources, 'question_schema': generation_schema()}
     try:
         model = llm_factory()

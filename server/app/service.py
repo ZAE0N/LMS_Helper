@@ -29,7 +29,7 @@ def glossary_paths(course: str | None) -> list[Path]:
 
 
 def translate_pdf(data: bytes, lang: str, course: str | None, llm: LLM, *, workers: int | None = None) -> dict:
-    if lang not in LANGS:
+    if lang not in LANGS and lang != "ko":
         raise ValueError(f"지원하지 않는 언어: {lang}")
     workers = int(os.getenv('TRANSLATION_WORKERS', '3')) if workers is None else workers
     if not 1 <= workers <= 5:
@@ -46,6 +46,14 @@ def translate_pdf(data: bytes, lang: str, course: str | None, llm: LLM, *, worke
 
     def process_page(p: dict) -> dict:
         blocks = copy.deepcopy(p["blocks"])
+        if lang == "ko":  # 한국어: 번역하지 않음 (LLM 호출 없음), 원본 페이지 그림만
+            page = {"page": p["page"], "original": p["text"], "translated": p["text"], "terms": [], "issues": [], "size": p["size"]}
+            save_pages(doc_id, data, page, blocks)
+            for b in blocks:
+                for key in ("lines", "fill", "runs", "parts"):
+                    b.pop(key, None)
+            page["blocks"] = blocks
+            return page
         # 통째로 붙인 그림 속 한글(OCR)도 같은 자리에 번역
         blocks += figure_labels(data, p["page"], p.get("figures") or [], [b["rect"] for b in blocks if b["type"] == "label"])
         source = marked_text(blocks) or p["text"]
@@ -89,7 +97,7 @@ def translate_pdf(data: bytes, lang: str, course: str | None, llm: LLM, *, worke
             "doc_id": doc_id,
             "lang": lang,
             "course": course,
-            "needs_review": g.needs_review(terms, lang),
+            "needs_review": [] if lang == "ko" else g.needs_review(terms, lang),
             "issue_pages": [p["page"] for p in pages if p["issues"]],
             "pages": pages,
         }

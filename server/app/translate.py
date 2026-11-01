@@ -5,6 +5,7 @@ import threading
 import time
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from typing import Literal
 
 from . import glossary as g
 from . import protect as pr
@@ -23,6 +24,9 @@ LANGS = {
     # "ne": "Nepali",
     # "zh": "Simplified Chinese"
 }
+# 화면·챗봇·복습 언어. 한국어(ko)는 교안을 번역하지 않고 원문 그대로 씀
+LANG_NAMES = {"en": "English", "ru": "Russian", "ko": "Korean"}
+Lang = Literal["en", "ru", "ko"]
 HANGUL = re.compile(r"[가-힣]")
 UNTRANSLATED_RATIO = 0.15
 
