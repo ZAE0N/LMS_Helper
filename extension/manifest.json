@@ -29,7 +29,6 @@
         "widgets.js"
       ],
       "css": [
-        "theme.css",
         "widgets.css"
       ],
       "run_at": "document_start"

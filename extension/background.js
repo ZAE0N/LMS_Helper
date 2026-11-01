@@ -32,7 +32,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 chrome.runtime.onInstalled.addListener(async () => {
   const { anonId } = await chrome.storage.local.get('anonId');
-  if (!anonId) await chrome.storage.local.set({ anonId: crypto.randomUUID(), theme: 'off' });
+  if (!anonId) await chrome.storage.local.set({ anonId: crypto.randomUUID() });
 });
 
 // 콘텐츠 스크립트에서 CORS로 막힌 파일 다운로드를 재시도

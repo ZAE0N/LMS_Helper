@@ -4,15 +4,17 @@
 
   const KO = {
     brand: 'LMS Helper',
-    tabs: { notices: '🔔 알림', materials: '📄 교안', review: '🧠 복습' },
+    tabs: { notices: '알림', materials: '교안', review: '복습' },
+    all: '전체',
+    pager: '쪽 이동',
+    prev: '이전 쪽',
+    next: '다음 쪽',
+    original: '원본',
+    translatedPdf: '번역본',
     close: '닫기',
     sources: { course: '수업', school: '학교', dept: '학과' },
-    more: '더 보기',
-    todo: '할 일',
-    deadline: '마감',
     closed: '마감됨',
     today: '오늘 마감',
-    original: '원문 보기',
     empty: '공지가 없습니다',
     loading: '불러오는 중…',
     error: '불러오지 못했습니다',
@@ -29,9 +31,6 @@
     download: '내려받기',
     view: '교안 보기',
     langLabel: '교안·챗봇 언어',
-    settings: '설정',
-    theme: 'LMS 화면 깔끔하게 (테마)',
-    themeHint: '퀴즈·시험 화면에서는 자동으로 꺼집니다',
     kinds: { pdf: '교안 (PDF)', slides: '발표 자료', docs: '문서', code: '코드·실습 파일', archive: '압축 파일',
              image: '그림', media: '동영상·소리', etc: '기타' },
     types: { multiple: '객관식', short: '주관식', matching: '연결형' },
@@ -149,40 +148,67 @@
     `viewer.html?${new URLSearchParams({ file: f.id, course: f.courseId, name: f.name, courseName: f.course, ...extra })}`;
 
   // ---------- 탭: 알림 ----------
+  // 학교·학과 홈페이지처럼 한 쪽에 10개, 쪽 번호로 이동. 누르면 새 탭에서 원문
+  const PAGE_SIZE = 10;
   function noticesTab() {
-    const state = { source: 'course', limit: CONFIG.LIMITS[0], page: 1, items: [], seq: 0 };
+    const state = { source: 'course', course: null, category: null, page: 1, known: 1, total: null, seq: 0 };
     const list = h('div', { class: 'lmsh-list' });
     const status = h('p', { class: 'lmsh-status' });
-    const more = h('button', { class: 'lmsh-more', type: 'button', hidden: true, onclick: () => load(false) }, KO.more);
+    const pager = h('nav', { class: 'lmsh-pager', 'aria-label': KO.pager });
+    const filters = h('div', { class: 'lmsh-filters' });
     const seg = Object.entries(KO.sources).map(([key, label]) =>
-      h('button', { type: 'button', 'data-s': key, onclick: () => ((state.source = key), load(true)) }, label));
-    const limit = h('select', { class: 'lmsh-select-sm', onchange: e => ((state.limit = Number(e.target.value)), load(true)) },
-      CONFIG.LIMITS.map(n => h('option', { value: n }, String(n))));
+      h('button', { type: 'button', 'data-s': key, onclick: () => {
+        Object.assign(state, { source: key, course: null, category: null });
+        load(1, true);
+      } }, label));
 
     const row = n => {
       const d = dday(n.deadline);
-      return h('details', { class: 'lmsh-notice' },
-        h('summary', {},
-          h('span', { class: `lmsh-dday ${d ? d.level : 'none'}` }, d ? d.text : ''),
-          h('div', { class: 'lmsh-main' },
-            h('strong', { class: 'lmsh-title' }, n.title),
-            n.action ? h('span', { class: 'lmsh-todo' }, `${KO.todo}: ${n.action}`) : n.summary ? h('span', { class: 'lmsh-sub' }, n.summary) : null),
-          h('div', { class: 'lmsh-side' },
-            n.course ? h('span', { class: 'lmsh-course' }, n.course) : null,
-            n.posted_at ? h('span', { class: 'lmsh-date' }, fmtDate(n.posted_at)) : null)),
-        h('div', { class: 'lmsh-detail' },
-          n.body ? h('p', { class: 'lmsh-text' }, n.body) : null,
-          n.deadline ? h('p', { class: 'lmsh-meta' }, `${KO.deadline}: ${n.deadline_text || n.deadline}`) : null,
-          n.url?.startsWith('https://') ? h('a', { href: n.url, target: '_blank', rel: 'noopener noreferrer', class: 'lmsh-link' }, `${KO.original} ↗`) : null));
+      const link = n.url?.startsWith('https://');
+      return h(link ? 'a' : 'div', { class: 'lmsh-notice', ...(link ? { href: n.url, target: '_blank', rel: 'noopener noreferrer' } : {}) },
+        h('span', { class: `lmsh-dday ${d ? d.level : 'none'}` }, d ? d.text : ''),
+        h('strong', { class: 'lmsh-title' }, n.title),
+        h('span', { class: 'lmsh-side' },
+          n.course && !state.course ? h('span', { class: 'lmsh-course' }, n.course) : null,
+          n.category ? h('span', { class: 'lmsh-course' }, n.category) : null,
+          n.posted_at ? h('span', { class: 'lmsh-date' }, fmtDate(n.posted_at)) : null));
     };
 
+    // 수업: 과목별 버튼 / 학교: 분류 버튼 (서버가 categories를 주면)
+    function chips(options, current, pick) {
+      return h('div', { class: 'lmsh-seg lmsh-wrap' },
+        [[null, KO.all], ...options].map(([value, label]) =>
+          h('button', { type: 'button', class: value === current ? 'on' : '', onclick: () => pick(value) }, label)));
+    }
+    async function paintFilters(res) {
+      if (state.source === 'course') {
+        const cs = await getCourses().catch(() => []);
+        filters.replaceChildren(chips(cs.map(c => [c.id, c.name]), state.course, v => { state.course = v; load(1, true); }));
+      } else if (res?.categories?.length) {
+        filters.replaceChildren(chips(res.categories.map(c => [c, c]), state.category, v => { state.category = v; load(1, true); }));
+      } else filters.replaceChildren();
+    }
+
+    function paintPager() {
+      const last = state.total || state.known;
+      const from = Math.max(1, Math.min(state.page - 3, last - 6));
+      const nums = [];
+      for (let i = from; i <= Math.min(last, from + 6); i++) nums.push(i);
+      const btn = (label, page, extra = {}) => h('button', { type: 'button', onclick: () => load(page), ...extra }, label);
+      pager.replaceChildren(
+        btn('‹', state.page - 1, { disabled: state.page <= 1, 'aria-label': KO.prev }),
+        ...nums.map(i => btn(String(i), i, { class: i === state.page ? 'on' : '', 'aria-current': i === state.page ? 'page' : null })),
+        btn('›', state.page + 1, { disabled: state.page >= last, 'aria-label': KO.next }));
+      pager.hidden = last <= 1;
+    }
+
     async function courseNotices(page) {
-      const raw = await getAnnouncements({ limit: state.limit, page });
+      const raw = await getAnnouncements({ limit: PAGE_SIZE, page, courseId: state.course });
       const key = it => `ex:${it.id}:${it.updated_at}`;
       const cached = await store.get(raw.items.map(key));
       const todo = raw.items.filter(it => !cached[key(it)]);
       if (todo.length) {
-        // 추출 실패(서버 꺼짐·미구현)해도 공지는 그대로 보여줌
+        // 마감일(D-day) 추출. 실패(서버 꺼짐)해도 공지는 그대로 보여줌
         const items = await Api.extract(todo.map(({ id, title, body, posted_at }) => ({ id, title, body, posted_at })))
           .then(r => r.items || [], () => []);
         const fresh = {};
@@ -195,41 +221,42 @@
         if (!CONFIG.MOCK_API.notices) store.set(fresh);
       }
       return {
-        items: raw.items.map(it => ({ ...it, summary: null, deadline: null, deadline_text: null, action: null, ...(cached[key(it)] || {}), id: it.id })),
+        items: raw.items.map(it => ({ ...it, deadline: null, ...(cached[key(it)] || {}), id: it.id })),
         has_more: raw.has_more
       };
     }
 
-    async function load(reset) {
+    async function load(page, reset = false) {
       const seq = ++state.seq;
-      if (reset) {
-        state.page = 1;
-        state.items = [];
-        list.replaceChildren();
-      } else state.page += 1;
+      if (reset) Object.assign(state, { known: 1, total: null });
+      state.page = Math.max(1, page);
       seg.forEach(b => b.classList.toggle('on', b.dataset.s === state.source));
+      if (reset) paintFilters();
       status.textContent = KO.loading;
-      more.hidden = true;
+      list.replaceChildren();
+      pager.hidden = true;
       try {
-        const res = state.source === 'course'
-          ? await courseNotices(state.page)
-          : await Api.getNotices({ source: state.source, limit: state.limit, page: state.page });
+        const q = { source: state.source, limit: PAGE_SIZE, page: state.page, ...(state.category ? { category: state.category } : {}) };
+        const res = state.source === 'course' ? await courseNotices(state.page) : await Api.getNotices(q);
         if (seq !== state.seq) return;
-        const before = state.items.length;
-        state.items = dedupe(state.items.concat(res.items));
-        list.replaceChildren(...state.items.map(row));
-        status.textContent = state.items.length ? '' : KO.empty;
-        more.hidden = !res.has_more || state.items.length === before;
+        const items = dedupe(res.items);
+        list.replaceChildren(...items.map(row));
+        status.textContent = items.length ? '' : KO.empty;
+        state.total = res.total_pages || null; // 서버가 전체 쪽수를 주면 사용, 없으면 지금까지 본 쪽 + 다음 쪽
+        state.known = Math.max(state.known, state.page + (res.has_more ? 1 : 0));
+        if (reset && state.source !== 'course') paintFilters(res);
+        paintPager();
+        list.parentElement?.scrollTo?.(0, 0);
       } catch (e) {
         if (seq === state.seq) status.textContent = `${KO.error} (${e.message})`;
       }
     }
 
     const el = h('div', { class: 'lmsh-tab' },
-      h('div', { class: 'lmsh-toolbar' }, h('div', { class: 'lmsh-seg' }, seg), limit,
+      h('div', { class: 'lmsh-toolbar' }, h('div', { class: 'lmsh-seg' }, seg),
         CONFIG.MOCK_API.notices ? h('span', { class: 'lmsh-sample' }, KO.sample) : null),
-      list, status, more);
-    return { el, start: () => load(true) };
+      filters, list, status, pager);
+    return { el, start: () => load(1, true) };
   }
 
   // ---------- 탭: 교안 (과목별 → 종류별) ----------
@@ -242,7 +269,11 @@
         h('strong', { class: 'lmsh-title' }, f.name),
         f.created_at ? h('span', { class: 'lmsh-sub' }, fmtDate(f.created_at)) : null),
       f.kind === 'pdf' ? h('button', { type: 'button', class: 'lmsh-btn ghost', onclick: () => onReview(f) }, KO.review) : null,
-      h('a', { class: 'lmsh-btn ghost lmsh-dl', href: downloadUrl(f), download: '', title: KO.download, 'aria-label': KO.download }, '⬇'),
+      h('a', { class: 'lmsh-btn ghost lmsh-dl', href: downloadUrl(f), download: '', title: KO.download },
+        f.kind === 'pdf' ? `${KO.original} ⬇` : '⬇'),
+      // 번역본: 교안 보기를 열어 번역(처음이면 변환) 후 인쇄 → PDF로 저장. 한국어일 때는 숨김
+      f.kind === 'pdf' ? h('button', { type: 'button', class: 'lmsh-btn ghost lmsh-dl-tr',
+        onclick: () => openPage(viewerUrl(f, { save: 1 })) }, `${KO.translatedPdf} ⬇`) : null,
       f.kind === 'pdf' ? h('button', { type: 'button', class: 'lmsh-btn', onclick: () => openPage(viewerUrl(f)) }, KO.view) : null);
 
     const kindGroup = (kind, files) => h('details', { class: 'lmsh-kind', open: kind === 'pdf' },
@@ -324,26 +355,17 @@
     return { el, start, preselect: f => { wanted = f; if (files.length) select.value = String(f.id); } };
   }
 
-  // ---------- 언어·설정 (예전 사이드 패널) ----------
+  // ---------- 언어 (예전 사이드 패널) ----------
   function prefs() {
     const btns = CONFIG.LANGS.map(code => h('button', { type: 'button', 'data-l': code, lang: code,
       onclick: () => store.set({ uiLang: code, uiLangManual: true }) }, LANG_NAMES[code]));
     const paint = lang => btns.forEach(b => b.classList.toggle('on', b.dataset.l === lang));
     store.get('uiLang').then(({ uiLang }) => paint(CONFIG.LANGS.includes(uiLang) ? uiLang : 'en'));
     chrome.storage.onChanged.addListener((c, area) => area === 'local' && c.uiLang && paint(c.uiLang.newValue));
-
-    const theme = h('input', { type: 'checkbox', onchange: e => store.set({ theme: e.target.checked ? 'clean' : 'off' }) });
-    store.get('theme').then(({ theme: v }) => (theme.checked = v === 'clean'));
-    const more = h('div', { class: 'lmsh-settings', hidden: true },
-      h('label', { class: 'lmsh-switch' }, theme, h('span', {}, KO.theme)),
-      h('p', { class: 'lmsh-sub' }, KO.themeHint));
     return h('div', { class: 'lmsh-prefs' },
       h('div', { class: 'lmsh-prefs-row' },
         h('span', { class: 'lmsh-sub' }, KO.langLabel),
-        h('div', { class: 'lmsh-seg lmsh-langs', translate: 'no' }, btns),
-        h('button', { type: 'button', class: 'lmsh-gear', title: KO.settings, 'aria-label': KO.settings,
-          onclick: () => (more.hidden = !more.hidden) }, '⚙')),
-      more);
+        h('div', { class: 'lmsh-seg lmsh-langs', translate: 'no' }, btns)));
   }
 
   // ---------- 서랍 ----------
@@ -378,6 +400,9 @@
       body);
     const handle = h('button', { type: 'button', class: 'lmsh-handle', onclick: () => toggle() }, KO.brand);
     const root = h('div', { class: 'lmsh-ui' }, handle, drawer);
+    const langClass = lang => root.classList.toggle('lang-ko', lang === 'ko');
+    store.get('uiLang').then(({ uiLang }) => langClass(uiLang));
+    chrome.storage.onChanged.addListener((c, area) => area === 'local' && c.uiLang && langClass(c.uiLang.newValue));
     document.body.append(root);
     return { root, drawer, show, firstShown: false };
   }

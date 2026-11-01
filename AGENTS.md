@@ -14,8 +14,8 @@
 
 ## 2. 구조
 ```
-LMS 페이지 ─ extension/content.js  (로그인 세션으로 Canvas API 읽기, 크롬 번역 감지, 상단 안내, 테마)
-            extension/widgets.*   (오른쪽 서랍: 알림 · 교안(과목별·종류별, PDF 외 파일은 내려받기) · 복습 + 언어(한국어·English·Русский)·테마 설정. 한국어 → 크롬 번역)
+LMS 페이지 ─ extension/content.js  (로그인 세션으로 Canvas API 읽기, 크롬 번역 감지, 상단 안내)
+            extension/widgets.*   (오른쪽 서랍: 알림(수업 과목별·학교 분류별, 10개씩 쪽 번호, 누르면 새 탭에서 원문) · 교안(과목별·종류별, PDF는 원본·번역본 내려받기) · 복습 + 언어(한국어·English·Русский). 한국어 → 크롬 번역)
                │  서버 요청은 background.js가 대신 보냄 (CORS)
 확장 화면  ─ extension/viewer.*    (교안 뷰어 + 챗봇 + 복습(페이지 범위), 복습 문제, 리포트. 한국어·영어·러시아어 i18n.js)
                ⇅ HTTP (JSON)

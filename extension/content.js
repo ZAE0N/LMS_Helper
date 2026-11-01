@@ -1,16 +1,5 @@
 const QUIZ_PATH = /\/(quizzes|quiz_submissions|assessments|assignments\/\d+\/lti)|\/take\b/;
 
-function applyTheme(theme) {
-  const on = theme === 'clean' && !QUIZ_PATH.test(location.pathname);
-  document.documentElement.classList.toggle('lmsh-clean', on);
-}
-
-chrome.storage.local.get('theme').then(({ theme }) => applyTheme(theme));
-chrome.storage.onChanged.addListener((c, area) => {
-  if (area === 'local' && c.theme) applyTheme(c.theme.newValue);
-});
-addEventListener('popstate', () => chrome.storage.local.get('theme').then(({ theme }) => applyTheme(theme)));
-
 // 크롬 번역 감지: 켜지면 <html>에 translated-ltr/rtl 클래스가 붙고 lang이 대상 언어로 바뀜 (공식 API 아님)
 function translateState() {
   const html = document.documentElement;
@@ -157,7 +146,7 @@ const ANNOUNCE_DAYS = 180; // 기본값은 최근 14일이라 기간을 직접 �
 // "시큐어코딩-3B-정규-21403" → "시큐어코딩"
 const shortCourse = name => (name || '').replace(/-\d[A-Z]-.*$/, '').trim() || name;
 
-async function getAnnouncements({ limit = 10, page = 1 }) {
+async function getAnnouncements({ limit = 10, page = 1, courseId = null }) {
   const courses = await canvasGet('/api/v1/courses?enrollment_state=active&per_page=50');
   if (!courses.length) return { items: [], page, has_more: false };
   const names = Object.fromEntries(courses.map(c => [`course_${c.id}`, shortCourse(c.name)]));
@@ -167,7 +156,7 @@ async function getAnnouncements({ limit = 10, page = 1 }) {
     per_page: String(limit),
     page: String(page)
   });
-  Object.keys(names).forEach(code => q.append('context_codes[]', code));
+  (courseId ? [`course_${courseId}`] : Object.keys(names)).forEach(code => q.append('context_codes[]', code));
   const list = await canvasGet(`/api/v1/announcements?${q}`);
   const items = list.map(a => ({
     id: `canvas-${a.id}`,

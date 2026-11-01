@@ -109,11 +109,11 @@ const DocView = (() => {
     slides.forEach(el => el.fitText());
     const imgs = [...root.querySelectorAll('img')];
     let done = 0;
-    note.textContent = t.preparingPdf(0, imgs.length);
+    note.textContent = `${t.converting} ${t.preparingPdf(0, imgs.length)}`;
     await Promise.all(imgs.map(img => (img.complete && img.naturalWidth ? Promise.resolve() : new Promise(r => {
       img.addEventListener('load', r, { once: true });
       img.addEventListener('error', r, { once: true });
-    })).then(() => (note.textContent = t.preparingPdf(++done, imgs.length)))));
+    })).then(() => (note.textContent = `${t.converting} ${t.preparingPdf(++done, imgs.length)}`))));
     note.remove();
     const cleanup = () => root.remove();
     addEventListener('afterprint', cleanup, { once: true });
@@ -171,7 +171,7 @@ const DocView = (() => {
         h('button', { type: 'button', class: 'btn', onclick: start }, t.start))));
   }
 
-  function render(doc) {
+  function render(doc, { autoSave = false } = {}) {
     const { t } = App;
     const app = document.getElementById('app');
     const pages = doc.pages;
@@ -300,6 +300,7 @@ const DocView = (() => {
     });
     const start = pages.findIndex(p => String(p.page) === App.params.get('page'));
     go(start >= 0 ? start : 0);
+    if (autoSave) printDoc(doc, !korean);
   }
 
   // 대화는 교안별 저장: summary + history(서버에 보냄) + log(화면 표시용)
