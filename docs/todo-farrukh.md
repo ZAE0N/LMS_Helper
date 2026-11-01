@@ -22,11 +22,17 @@
 6. `AGENTS.md` 3장 교안에 `password` 항목과 401 오류 두 가지 추가 → 합치기 전에 정현에게 알림
 
 ## 2. 정현 PR(`ext/structured-view`) 확인
-이 PR은 서버 파일도 바꿈 (슬라이드 보기: `structure.py`, `service.py`, `figure_ocr.py`, `main.py`)
-- `pip install -r requirements.txt` (새로 추가: `rapidocr`, `onnxruntime`) → `python -m pytest -q`
-- 확장에서 교안 하나를 열어 슬라이드 보기가 나오는지 확인
-- 처음 OCR을 쓸 때 한국어 모델(약 13MB)을 내려받음. 서버 로그에 `그림 OCR 사용 불가`가 나오면 정현에게 알림
+이 PR은 서버 파일도 바꿈 (`structure.py`, `service.py`, `figure_ocr.py`, `translate.py`, `main.py`)
+- 바뀐 점 요약
+  - 교안 응답: 페이지 그림(`image`, `background`)과 글 덩어리 위치(`blocks[].rect/box`) → 확장이 원본 모양 위에 번역을 올림
+  - 블록 종류: `label`(그림 속 글자), `comment`(코드 주석), `codetext`·`codeline`(코드 속 한글), `deco`(머리·꼬리 장식)
+  - 통째 그림 속 한글은 OCR(`rapidocr`)로 찾아 번역
+  - 번역 규칙(`translate.py` SYSTEM)에 고유명사 규칙 추가, `PROMPT_VERSION`을 페이지 캐시 키에 넣음
+- 확인 방법
+  - `pip install -r requirements.txt` (새로 추가: `rapidocr`, `onnxruntime`) → `python -m pytest -q`
+  - 확장에서 교안 하나를 열어 슬라이드 보기가 나오는지
+  - 처음 OCR을 쓸 때 한국어 모델(약 13MB)을 내려받음. 서버 로그에 `그림 OCR 사용 불가`/`그림 OCR 실패`가 나오면 정현에게 알림
 
 ## 참고
-- 형식 버전(`STRUCTURE_VERSION`)이 바뀌어 교안마다 한 번씩 새로 번역됨 (교안당 토큰 한 번)
+- 형식·번역 규칙 버전이 바뀌어 교안마다 한 번씩 전체를 새로 번역함 (교안당 토큰 한 번)
 - 커밋은 작게: `feat(server): ...`, `test(server): ...`
