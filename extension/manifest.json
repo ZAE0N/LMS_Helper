@@ -3,16 +3,35 @@
   "name": "LMS Helper",
   "version": "0.1.0",
   "description": "외국인 유학생을 위한 인하공전 LMS 도우미",
-  "permissions": ["storage", "sidePanel"],
-  "host_permissions": ["https://lms-app.inhatc.ac.kr/*", "https://inhatc-lms.kr.object.gov-ncloudstorage.com/*", "http://localhost:8000/*"],
-  "background": { "service_worker": "background.js" },
-  "action": { "default_title": "LMS Helper" },
-  "side_panel": { "default_path": "sidepanel.html" },
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://lms-app.inhatc.ac.kr/*",
+    "https://inhatc-lms.kr.object.gov-ncloudstorage.com/*",
+    "http://localhost:8000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "LMS Helper"
+  },
   "content_scripts": [
     {
-      "matches": ["https://lms-app.inhatc.ac.kr/*"],
-      "js": ["config.js", "mock.js", "content.js", "widgets.js"],
-      "css": ["theme.css", "widgets.css"],
+      "matches": [
+        "https://lms-app.inhatc.ac.kr/*"
+      ],
+      "js": [
+        "config.js",
+        "mock.js",
+        "content.js",
+        "widgets.js"
+      ],
+      "css": [
+        "theme.css",
+        "widgets.css"
+      ],
       "run_at": "document_start"
     }
   ]

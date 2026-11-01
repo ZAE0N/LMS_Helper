@@ -23,13 +23,16 @@
 
   if (mode === 'report') return ReportView.render();
 
-  async function open() {
+  async function open(password = null) {
     try {
-      const doc = await App.loadDoc(text => App.status(text));
+      const doc = await App.loadDoc(text => App.status(text), { password });
       if (mode === 'review') await QuizView.render(doc);
       else DocView.render(doc);
     } catch (e) {
-      App.status(e instanceof App.UserError ? e.message : e instanceof TypeError ? t.errServer : `${t.errServerFail} (${e.message})`, { error: true, retry: open });
+      if (e instanceof App.PasswordError) {
+        return App.askPassword(e.wrong, pw => open(pw), () => App.status(t.passwordCancelled, { error: true, retry: () => open() }));
+      }
+      App.status(e instanceof App.UserError ? e.message : e instanceof TypeError ? t.errServer : `${t.errServerFail} (${e.message})`, { error: true, retry: () => open() });
     }
   }
   open();

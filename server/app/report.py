@@ -13,17 +13,19 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from . import service
 from .learning import LearningStore
 from .llm import LLM
-from .translate import Cache
+from .translate import Cache, LANG_NAMES
 
 Rate = Annotated[float, Field(ge=0, le=1)]
 PageNumber = Annotated[int, Field(strict=True, ge=1)]
 NO_ACTIVITY = {
     'en': 'No learning activity has been recorded yet. Open a document and complete a practice quiz to get started.',
     'ru': 'Учебная активность пока не записана. Откройте материал и пройдите тренировочный тест.',
+    'ko': '아직 학습 기록이 없습니다. 교안을 열고 복습 문제를 풀어 보세요.',
 }
 SELECT_DOCUMENT = {
     'en': 'Select one document to see possible exam topics with unambiguous page references.',
     'ru': 'Выберите один учебный материал, чтобы увидеть предполагаемые экзаменационные темы с точными страницами.',
+    'ko': '교안을 하나 고르면 근거 페이지와 함께 시험 예상 주제를 볼 수 있습니다.',
 }
 SYSTEM = """Write a learning report in {language}. The statistics are authoritative database
 results. Never invent or change scores, counts, weaknesses or performance. Only infer a
@@ -187,7 +189,7 @@ class ReportBuilder:
                 model = llm_factory()
             except (KeyError, ValueError) as e:
                 raise ReportError('학습 리포트 모델을 사용할 수 없음') from e
-            system = SYSTEM.format(language='Russian' if lang == 'ru' else 'English')
+            system = SYSTEM.format(language=LANG_NAMES[lang])
             for attempt in range(2):
                 try:
                     raw = model.chat(system, json.dumps(payload, ensure_ascii=False))

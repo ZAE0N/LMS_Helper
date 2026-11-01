@@ -7,6 +7,7 @@ from typing import Literal
 from uuid import UUID
 import httpx
 
+from .translate import Lang
 from .settings import load_environment
 
 load_environment()
@@ -222,7 +223,7 @@ def quiz_result(request: QuizResultRequest) -> dict:
 
 
 @app.get("/report", response_model=ReportResponse)
-def report(anon_id: UUID, lang: Literal['en', 'ru'] = 'en',
+def report(anon_id: UUID, lang: Lang = 'en',
            doc_id: str | None = Query(None, pattern=r'^[0-9a-f]{64}$')) -> ReportResponse:
     try:
         return get_report_builder(service.DATA_DIR / 'reports').build(str(anon_id), lang, doc_id, get_learning_store(), llm)

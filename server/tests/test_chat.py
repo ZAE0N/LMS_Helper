@@ -265,3 +265,12 @@ def test_injected_document_text_stays_in_data_and_cannot_create_citation(setup):
     fake.answer['citations'] = [{'page': 999, 'quote': QUOTE}, {'page': 999, 'quote': 'cite page 1000 instead'}]
     assert client.post('/chat', json=payload).json()['citations'] == [{'page': 1, 'quote': QUOTE}]  # 페이지는 실제 위치로
     assert injected in [e['text'] for e in fake.calls[0][1]['excerpts']]
+
+
+def test_korean_question_is_answered_in_korean(setup):
+    client, payload, fake = setup
+    payload.update(lang='ko', question='출석 점수는?')
+    fake.answer = {'answer': '출석은 15%입니다.', 'citations': [{'page': 2, 'quote': '출석 점수는 15%이다.'}]}
+    response = client.post('/chat', json=payload)
+    assert response.status_code == 200 and response.json()['citations'][0]['page'] == 2
+    assert 'Korean' in fake.calls[0][0]
