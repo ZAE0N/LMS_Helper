@@ -39,10 +39,11 @@ Rules:
 4. Proper nouns: use the official or widely used {lang} name when one exists
    (for example 인하공업전문대학 → Inha Technical College, 스킬라 → Scylla). Keep Korean-only proper nouns that have
    no widely used {lang} name (people's names, Korean place, organization or service names) exactly as written in Korean.
-5. Translate every other Korean word, including words inside parentheses. When the text already gives the same term
-   in Korean and another language (for example 정밀도(Precision)), write the {lang} term once instead of keeping the Korean.
+5. Translate every other Korean word, including words inside parentheses. Keep English that is already in the text
+   as it is: 정밀도(Precision) → the {lang} word for 정밀도 followed by (Precision). If that {lang} word is the same
+   as the English, write it only once.
 6. Output only the translation."""
-PROMPT_VERSION = "p4"  # 위 규칙을 바꾸면 올려서 저장된 페이지 번역을 다시 만듦
+PROMPT_VERSION = "p5"  # 위 규칙을 바꾸면 올려서 저장된 페이지 번역을 다시 만듦
 
 USER = """Glossary:
 {glossary}

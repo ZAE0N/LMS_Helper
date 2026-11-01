@@ -210,9 +210,9 @@ def test_korean_left_in_parentheses_gets_one_more_try_without_flagging(terms):
             self.calls.append(user)
             return self.answers[len(self.calls) - 1]
 
-    llm = Responses(['Ruin Risk (카리브디스) and Precision (정밀도)', 'Ruin Risk (Charybdis) and Precision'])
-    r = translate_text('파멸 위험(Ruin Risk, 카리브디스)과 정밀도(Precision)', 'en', terms, llm)
-    assert r['translated'] == 'Ruin Risk (Charybdis) and Precision' and r['issues'] == []
+    llm = Responses(['риск (Ruin Risk, 카리브디스) и 정밀도 (Precision)', 'риск (Ruin Risk, Харибда) и точность (Precision)'])
+    r = translate_text('파멸 위험(Ruin Risk, 카리브디스)과 정밀도(Precision)', 'ru', terms, llm)
+    assert r['translated'] == 'риск (Ruin Risk, Харибда) и точность (Precision)' and r['issues'] == []
     assert len(llm.calls) == 2 and '카리브디스' in llm.calls[1] and '정밀도' in llm.calls[1]
     answer = 'If there is a gas accident in the laboratory, please call 한국가스안전공사 right away'
     kept = Responses([answer, answer])  # 한국에만 있는 기관 이름은 남아도 됨
