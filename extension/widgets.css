@@ -97,3 +97,20 @@
 .lmsh-ui .lmsh-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .lmsh-ui .lmsh-chip { border: 1px solid var(--lmsh-line); border-radius: 999px; padding: 3px 12px; background: #fff; cursor: pointer; }
 .lmsh-ui .lmsh-chip.on { border-color: var(--lmsh-accent); color: var(--lmsh-accent); background: var(--lmsh-accent-soft); }
+/* 언어·설정 */
+.lmsh-ui .lmsh-prefs { padding: 6px 14px; border-bottom: 1px solid var(--lmsh-line); background: #fafbfc; }
+.lmsh-ui .lmsh-prefs-row { display: flex; align-items: center; gap: 8px; }
+.lmsh-ui .lmsh-langs button { padding: 3px 10px; font-size: 12px; }
+.lmsh-ui .lmsh-gear { margin-left: auto; border: 0; background: none; cursor: pointer; font-size: 15px; color: var(--lmsh-muted); }
+.lmsh-ui .lmsh-settings { padding: 6px 0 2px; }
+.lmsh-ui .lmsh-switch { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+/* 파일 종류 */
+.lmsh-ui .lmsh-kind { margin: 4px 0; }
+.lmsh-ui .lmsh-kind > summary { cursor: pointer; font-weight: 600; font-size: 12.5px; color: var(--lmsh-muted); padding: 4px 2px; display: flex; gap: 6px; align-items: center; }
+.lmsh-ui .lmsh-pdf.kind-slides { color: #c4320a; } .lmsh-ui .lmsh-pdf.kind-docs { color: #175cd3; }
+.lmsh-ui .lmsh-pdf.kind-code { color: #067647; } .lmsh-ui .lmsh-pdf.kind-archive { color: #6941c6; }
+.lmsh-ui .lmsh-pdf.kind-image, .lmsh-ui .lmsh-pdf.kind-media { color: #b54708; } .lmsh-ui .lmsh-pdf.kind-etc { color: var(--lmsh-muted); }
+.lmsh-ui .lmsh-dl { text-decoration: none; padding: 5px 9px; }
+/* 복습 범위 */
+.lmsh-ui .lmsh-range { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+.lmsh-ui .lmsh-num { width: 72px; border: 1px solid var(--lmsh-line); border-radius: 8px; padding: 3px 8px; height: auto; }

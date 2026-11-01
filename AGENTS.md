@@ -15,21 +15,20 @@
 ## 2. 구조
 ```
 LMS 페이지 ─ extension/content.js  (로그인 세션으로 Canvas API 읽기, 크롬 번역 감지, 상단 안내, 테마)
-            extension/widgets.*   (오른쪽 서랍: 알림 · 교안(과목별) · 복습. 한국어 → 크롬 번역)
+            extension/widgets.*   (오른쪽 서랍: 알림 · 교안(과목별·종류별, PDF 외 파일은 내려받기) · 복습 + 언어(한국어·English·Русский)·테마 설정. 한국어 → 크롬 번역)
                │  서버 요청은 background.js가 대신 보냄 (CORS)
-확장 화면  ─ extension/viewer.*    (교안 뷰어 + 챗봇, 복습 문제, 리포트. 영어·러시아어 i18n.js)
-            extension/sidepanel.* (교안 언어 설정, 테마, 개발용 진단)
+확장 화면  ─ extension/viewer.*    (교안 뷰어 + 챗봇 + 복습(페이지 범위), 복습 문제, 리포트. 한국어·영어·러시아어 i18n.js)
                ⇅ HTTP (JSON)
           server/ (LLM API 키는 서버에만)
 ```
 - 개발 서버 주소: `http://localhost:8000` (확장은 `extension/config.js` 한 곳에서 관리, 바꾸면 `manifest.json`의 `host_permissions`도 함께)
 - 사용자 구분: 로그인 없음. 확장 설치 시 만든 `anon_id`(UUID)만 사용
-- 언어 코드: `en` `ru` (필요 시 `ja`)
+- 언어 코드: `ko` `en` `ru` (필요 시 `ja`). `ko`는 교안을 번역하지 않고 원문 그대로, 챗봇·복습·리포트만 한국어
 - 코드에 `localhost` 등 서버 주소를 쓰지 않는다. 확장은 `CONFIG.SERVER_URL`, 서버는 환경변수만 사용
 
 ## 3. API 약속
 오류는 HTTP 4xx/5xx + `{"detail": "메시지"}`.
-언어 코드: `en`(영어) · `ru`(러시아어) · `ja`(일본어, 필요 시 추가. MVP는 영어·러시아어만)
+언어 코드: `ko`(한국어, 교안은 원문 그대로) · `en`(영어) · `ru`(러시아어) · `ja`(일본어, 필요 시 추가)
 
 ### 교안
 - `POST /documents` — multipart: `file`(PDF, **업로드 1회 최대 100MB**), `lang`, `course`(선택, 용어집 파일명)

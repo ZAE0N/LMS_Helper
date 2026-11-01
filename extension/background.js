@@ -1,5 +1,10 @@
 importScripts('config.js');
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+
+// 확장 아이콘: LMS 탭이면 서랍 열고 닫기, 아니면 LMS 열기
+chrome.action.onClicked.addListener(tab => {
+  if (tab.url?.startsWith(CONFIG.LMS_ORIGIN)) chrome.tabs.sendMessage(tab.id, { type: 'toggle-drawer' }).catch(() => {});
+  else chrome.tabs.create({ url: CONFIG.LMS_ORIGIN });
+});
 
 // LMS 페이지(콘텐츠 스크립트)는 CORS 때문에 서버로 직접 못 보냄 → 여기서 대신 요청
 async function callServer({ method = 'GET', path, body }) {

@@ -24,7 +24,13 @@ function reportTranslate() {
   const key = JSON.stringify(s);
   if (key === lastTranslate) return;
   lastTranslate = key;
-  chrome.runtime.sendMessage({ type: 'page-translate', ...s }).catch(() => {}); // 패널이 닫혀 있으면 무시
+  followChrome(s);
+}
+// 서랍에서 언어를 직접 고르지 않았으면 크롬 번역 언어를 따라감 (지원하는 언어만)
+async function followChrome({ translated, lang }) {
+  if (!translated || !CONFIG.LANGS.includes(lang)) return;
+  const { uiLangManual, uiLang } = await chrome.storage.local.get(['uiLangManual', 'uiLang']).catch(() => ({}));
+  if (!uiLangManual && uiLang !== lang) chrome.storage.local.set({ uiLang: lang }).catch(() => {});
 }
 new MutationObserver(reportTranslate).observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'lang'] });
 
@@ -34,8 +40,13 @@ const TOAST_TEXT = {
   ru: 'Включите перевод Chrome: значок перевода в адресной строке → ваш язык → «Всегда переводить с корейского»'
 };
 let toastHost = null;
+let uiLangNow = null; // 한국어를 고른 사용자에게는 크롬 번역 안내를 띄우지 않음
+chrome.storage.local.get('uiLang').then(({ uiLang }) => { uiLangNow = uiLang; updateToast(translateState()); }).catch(() => {});
+chrome.storage.onChanged.addListener((c, area) => {
+  if (area === 'local' && c.uiLang) { uiLangNow = c.uiLang.newValue; updateToast(translateState()); }
+});
 function updateToast({ translated }) {
-  const show = CONFIG.CT_TOAST && !translated && !QUIZ_PATH.test(location.pathname);
+  const show = CONFIG.CT_TOAST && !translated && uiLangNow !== 'ko' && !QUIZ_PATH.test(location.pathname);
   if (!show) {
     toastHost?.remove();
     toastHost = null;
