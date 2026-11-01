@@ -39,6 +39,7 @@ LMS 페이지 ─ extension/content.js  (로그인 세션으로 Canvas API 읽�
   - `blocks`: `[{type, level: 0~3, text, translated?, rect, box, size, color, bold, align?, wrap?, ocr?, code?, deco?}]` (좌표는 pt, `[x0, y0, x1, y1]`)
     - `type`: `heading` · `bullet` · `text` · `code` · `label`(그림 속 글자) · `comment`(코드 속 한글 주석) · `codetext`(코드 속 한글 덩어리, 번역 단위) · `codeline`(codetext를 번역문으로 바꿔 다시 쓴 코드 줄)
     - 화면에는 `codetext`가 아니라 `codeline`을 올림 (코드 문자는 그대로, 한글만 번역). `code: true`인 그림 속 글자(표 속 코드)도 같은 방식
+    - `codetext` 단위: 한글이 있는 문자열은 따옴표 안 전체(문맥 유지), 문자열·코드 속 HTML은 태그 사이 글, 나머지는 이어진 한글 덩어리. 그림 속 글자는 한 글자도 번역
     - `rect`: 원문 위치, `box`: 번역문이 들어갈 자리(번역문이 길면 확장이 글자를 줄임), `align`: `center`·`left`(없으면 왼쪽), `wrap: false`인 그림 속 글자는 한 줄로(넘치면 글자를 줄임)
     - 페이지마다 한 번에 용어집 파이프라인으로 번역. 덩어리별로 맞지 않으면 블록에 `translated`가 없고 `background`도 없음 → 확장은 원본 페이지 + 페이지 전체 번역
     - 주소·숫자만 있는 줄, 번역해도 같은 글은 원문 그대로(지우지 않음). 고유명사는 널리 쓰는 외국어 이름이 있으면 번역, 한국에만 있는 이름은 한국어 그대로(애매하면 그대로)
