@@ -15,15 +15,38 @@ const DocView = (() => {
 
   const imageUrl = (doc, name) => `${CONFIG.SERVER_URL}/documents/${doc.doc_id}/figures/${name}`;
 
-  // 번역문이 자리(box)에 맞을 때까지 글자를 줄임 (최소 원래 크기의 45%)
-  function fit(el, size) {
+  // 번역문이 자리(box)에 맞을 때까지 글자를 줄임. 화면에서 MIN_PX보다 작게는 줄이지 않음
+  // 그래도 넘치면 칸 안에서 자르고, 마우스를 올리거나 Tab으로 고르면 전체 문장을 보여 줌
+  const MIN_PX = 10;
+  function fit(el, size, scale = 1, code = false) {
+    const min = MIN_PX / scale;
+    let s = code ? size : Math.max(size, min); // 원래 작은 글도 최소 크기까지 키움 (코드 줄은 그대로)
+    el.style.fontSize = `${s}px`;
+    el.style.height = el.style.getPropertyValue('--h');
+    el.style.marginTop = '';
+    el.classList.remove('squeeze', 'more');
+    el.removeAttribute('tabindex');
+    el.removeAttribute('title');
     const over = () => el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1;
-    let s = size;
-    while (s > size * 0.45 && over()) {
-      s *= 0.92;
+    const floor = code ? Math.min(size, Math.max(size * 0.45, min)) : Math.max(size * 0.45, min);
+    while (s > floor && over()) {
+      s = Math.max(floor, s * 0.92);
       el.style.fontSize = `${s}px`;
     }
-    if (over()) el.classList.add('squeeze'); // 그래도 넘치면 긴 낱말도 줄바꿈
+    if (!over()) return;
+    el.classList.add('squeeze'); // 긴 낱말도 줄바꿈
+    if (!over()) return;
+    el.classList.add('more');
+    const lines = Math.max(1, Math.floor(el.clientHeight / (s * 1.15)));
+    el.style.setProperty('--lines', lines);
+    el.style.setProperty('--clip', `${lines * s * 1.15 + 1}px`);
+    const need = lines * s * 1.15 + 1 - el.clientHeight;
+    if (need > 0) { // 한 줄도 안 들어가는 낮은 칸: 위아래로 조금 넓혀 글자가 잘리지 않게
+      el.style.height = `${el.clientHeight + need}px`;
+      el.style.marginTop = `${-need / 2}px`;
+    }
+    el.tabIndex = 0;
+    el.title = el.textContent;
   }
 
   // 서버 그림을 잠깐 못 받으면 두 번 더 시도
@@ -52,15 +75,18 @@ const DocView = (() => {
         const [x0, y0, x1, y1] = b.box;
         const el = h('div', {
           class: `ov ${b.type} ${b.align || 'left'}${b.type === 'label' && !b.wrap ? ' nowrap' : ''}${b.ocr ? ' ocr' : ''}`,
-          style: `left:${x0}px;top:${y0}px;width:${x1 - x0}px;height:${y1 - y0}px;font-size:${b.size}px;` +
-            `color:${b.color || '#000'};font-weight:${b.bold ? 700 : 400}`,
+          style: `left:${x0}px;top:${y0}px;width:${x1 - x0}px;height:${y1 - y0}px;--h:${y1 - y0}px;font-size:${b.size}px;` +
+            `color:${b.color || '#000'};font-weight:${b.bold ? 700 : 400}${b.indent ? `;text-indent:${b.indent}px` : ''}`,
         }, clean(b.translated));
         inner.append(el);
-        boxes.push([el, b.size]);
+        boxes.push([el, b.size, b.type === 'codeline' || b.type === 'comment']);
       }
     }
     const box = h('div', { class: 'slide', 'data-w': w, 'data-h': h0, 'data-err': App.t.imageError }, inner);
-    box.fitText = () => boxes.forEach(([el, size]) => fit(el, size));
+    box.fitText = () => {
+      const scale = Number(/scale\(([\d.]+)\)/.exec(inner.style.transform)?.[1]) || Number(inner.style.zoom) || 1;
+      boxes.forEach(([el, size, code]) => fit(el, size, scale, code));
+    };
     return box;
   }
 
@@ -97,23 +123,28 @@ const DocView = (() => {
     const note = h('div', { class: 'print-note' });
     const root = h('div', { class: 'print-root', 'aria-hidden': 'true' });
     document.body.append(root, note);
-    const slides = doc.pages.filter(slideReady).map(p => slide(doc, p, translated && overlaid(p)));
-    root.append(...slides.map(el => h('div', { class: 'print-page' }, el)));
+    const ready = doc.pages.filter(slideReady);
+    const slides = ready.map(p => slide(doc, p, translated && overlaid(p)));
+    // 슬라이드에 올리지 못한 페이지는 다음 장에 페이지 전체 번역
+    root.append(...ready.flatMap((p, i) => [h('div', { class: 'print-page' }, slides[i]),
+      translated && !overlaid(p) && (p.translated || '').trim() ? h('div', { class: 'print-page print-text' },
+        h('p', { class: 'muted' }, `${t.pageNo(p.page)} · ${t.pageTextNote}`), Object.assign(h('div', { class: 'text' }), { textContent: clean(p.translated) })) : null]
+      .filter(Boolean)));
     for (const el of slides) {
       const w = Number(el.dataset.w), hh = Number(el.dataset.h);
       const scale = Math.min(PRINT.w / w, PRINT.h / hh);
       el.style.width = `${w * scale}px`;
       el.style.height = `${hh * scale}px`;
-      el.firstChild.style.transform = `scale(${scale})`;
+      el.firstChild.style.zoom = scale; // 인쇄는 zoom: transform이면 크롬이 페이지를 넓게 보고 전체를 줄임
     }
     slides.forEach(el => el.fitText());
     const imgs = [...root.querySelectorAll('img')];
     let done = 0;
-    note.textContent = t.preparingPdf(0, imgs.length);
+    note.textContent = `${t.converting} ${t.preparingPdf(0, imgs.length)}`;
     await Promise.all(imgs.map(img => (img.complete && img.naturalWidth ? Promise.resolve() : new Promise(r => {
       img.addEventListener('load', r, { once: true });
       img.addEventListener('error', r, { once: true });
-    })).then(() => (note.textContent = t.preparingPdf(++done, imgs.length)))));
+    })).then(() => (note.textContent = `${t.converting} ${t.preparingPdf(++done, imgs.length)}`))));
     note.remove();
     const cleanup = () => root.remove();
     addEventListener('afterprint', cleanup, { once: true });
@@ -171,7 +202,7 @@ const DocView = (() => {
         h('button', { type: 'button', class: 'btn', onclick: start }, t.start))));
   }
 
-  function render(doc) {
+  function render(doc, { autoSave = false } = {}) {
     const { t } = App;
     const app = document.getElementById('app');
     const pages = doc.pages;
@@ -180,7 +211,7 @@ const DocView = (() => {
     let mode = !pages.some(slideReady) ? 'text' : korean ? 'or' : 'tr';
 
     const pick = h('select', { class: 'page-pick', 'aria-label': t.pages, onchange: e => go(Number(e.target.value)) },
-      pages.map((p, i) => h('option', { value: i }, `${t.page} ${p.page} / ${pages[pages.length - 1].page}${p.issues?.length ? '  !' : ''}`)));
+      pages.map((p, i) => h('option', { value: i }, `${t.pageOf(p.page, pages[pages.length - 1].page)}${p.issues?.length ? '  !' : ''}`)));
     const prev = h('button', { type: 'button', class: 'icon', title: t.prev, 'aria-label': t.prev, onclick: () => go(current - 1) }, '‹');
     const next = h('button', { type: 'button', class: 'icon', title: t.next, 'aria-label': t.next, onclick: () => go(current + 1) }, '›');
     const modes = (korean ? [['or', t.original], ['text', t.textMode]] : [['tr', t.translated], ['or', t.original], ['side', t.side], ['text', t.textMode]]).map(([k, label]) =>
@@ -192,11 +223,11 @@ const DocView = (() => {
     const review = doc.needs_review?.length ? h('span', { class: 'warn-badge soft', title: t.needsReview }, 'i') : null;
     const stage = h('div', { class: 'stage' });
     const chat = Chat(doc, n => goPage(n), () => toggle('chat', false));
-    const chatBtn = h('button', { type: 'button', class: 'chat-toggle', 'aria-expanded': 'false', onclick: () => toggle('chat') }, `💬 ${t.chatOpen}`);
+    const chatBtn = h('button', { type: 'button', class: 'chat-toggle', 'aria-expanded': 'false', onclick: () => toggle('chat') }, t.chatOpen);
     const quiz = QuizPanel(doc, () => pages[current].page, () => toggle('quiz', false));
-    const quizBtn = h('button', { type: 'button', class: 'tool-btn quiz-toggle', 'aria-expanded': 'false', onclick: () => toggle('quiz') }, `📝 ${t.quizOpen}`);
+    const quizBtn = h('button', { type: 'button', class: 'tool-btn quiz-toggle', 'aria-expanded': 'false', onclick: () => toggle('quiz') }, t.quizOpen);
     const saveBtn = h('button', { type: 'button', class: 'tool-btn save-pdf', title: t.savePdf,
-      onclick: () => printDoc(doc, !korean && mode !== 'or') }, `⬇ ${t.savePdf}`);
+      onclick: () => printDoc(doc, !korean && mode !== 'or') }, t.savePdf);
     // 왼쪽 페이지 목록: 열면 슬라이드를 옆으로 밀고 들어옴 (GitHub 파일 목록처럼)
     // 목록 제목: 여러 페이지에 반복되는 단원 제목 대신 그 페이지의 첫 항목
     const headings = {};
@@ -242,6 +273,7 @@ const DocView = (() => {
         el.style.width = `${w * scale}px`;
         el.style.height = `${hh * scale}px`;
         el.firstChild.style.transform = `scale(${scale})`;
+        el.fitText();
       }
     }
 
@@ -272,7 +304,6 @@ const DocView = (() => {
       stage.replaceChildren(h('div', { class: 'slides' }, shown), ...(fallback ? [h('div', { class: 'page-text' },
         h('p', { class: 'muted' }, t.pageTextNote), Object.assign(h('div', { class: 'text' }), { textContent: clean(p.translated) }))] : []));
       layout();
-      shown.forEach(el => el.fitText());
       // 다음 페이지 그림 미리 받기
       const n = pages[current + 1];
       if (n?.image) [n.image, n.background].filter(Boolean).forEach(x => (new Image().src = imageUrl(doc, x)));
@@ -287,7 +318,9 @@ const DocView = (() => {
       h('nav', { class: 'crumbs' }, listBtn, prev, pick, next, h('span', { class: 'issue-wrap' }, warn, issues), review),
       h('div', { class: 'seg' }, modes),
       saveBtn, quizBtn, chatBtn);
-    app.replaceChildren(h('div', { class: 'doc' }, toolbar, h('div', { class: 'doc-body' }, list, stage, chat, quiz)));
+    document.querySelector('.bar .toolbar')?.remove();
+    document.querySelector('.bar .titles').after(toolbar); // 제목과 같은 줄: 슬라이드 자리를 넓힘
+    app.replaceChildren(h('div', { class: 'doc' }, h('div', { class: 'doc-body' }, list, stage, chat, quiz)));
     new ResizeObserver(() => layout()).observe(stage);
     for (const name of ['pages', 'chat']) {
       try { if (localStorage.getItem(`panel:${name}`)) toggle(name, true); } catch {}
@@ -300,6 +333,7 @@ const DocView = (() => {
     });
     const start = pages.findIndex(p => String(p.page) === App.params.get('page'));
     go(start >= 0 ? start : 0);
+    if (autoSave) printDoc(doc, !korean);
   }
 
   // 대화는 교안별 저장: summary + history(서버에 보냄) + log(화면 표시용)
@@ -316,7 +350,7 @@ const DocView = (() => {
       h('p', {}, m.content),
       m.role === 'assistant' && m.citations ? h('div', { class: 'cites' },
         m.citations.length
-          ? m.citations.map(c => h('button', { type: 'button', class: 'cite', title: c.quote || '', onclick: () => goPage(c.page) }, `${t.page} ${c.page}`))
+          ? m.citations.map(c => h('button', { type: 'button', class: 'cite', title: c.quote || '', onclick: () => goPage(c.page) }, t.pageNo(c.page)))
           : h('span', { class: 'muted' }, t.noSource)) : null);
     const paint = () => {
       box.replaceChildren(...(state.log.length ? state.log.map(bubble) : [h('p', { class: 'muted hint' }, t.chatHint)]));

@@ -17,6 +17,12 @@
   "action": {
     "default_title": "LMS Helper"
   },
+  "web_accessible_resources": [
+    {
+      "resources": ["fonts/PretendardVariable.woff2"],
+      "matches": ["https://lms-app.inhatc.ac.kr/*"]
+    }
+  ],
   "content_scripts": [
     {
       "matches": [
@@ -29,7 +35,6 @@
         "widgets.js"
       ],
       "css": [
-        "theme.css",
         "widgets.css"
       ],
       "run_at": "document_start"

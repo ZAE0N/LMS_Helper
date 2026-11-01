@@ -3,6 +3,7 @@
 RapidOCR(Apache-2.0) 한국어 모델은 처음 실행할 때 한 번 내려받음. FIGURE_OCR=0이면 끔"""
 import logging
 import os
+import re
 import statistics
 from threading import Lock
 
@@ -13,6 +14,7 @@ from .structure import _RENDER_LOCK, HANGUL, _r, label_box
 log = logging.getLogger(__name__)
 DPI = 300  # 화면 캡처 속 작은 글자도 읽도록 크게
 MIN_SCORE = 0.5
+GARBLED = re.compile(r'[\u3131-\u318e|{}\[\]<>]')  # 낱자모·기호가 섞이면 잘못 읽은 것
 _lock = Lock()
 _engine = None
 _failed = False
@@ -54,7 +56,10 @@ def figure_labels(data: bytes, page: int, figures: list[dict], known: list[list[
     if not rasters or os.getenv('FIGURE_OCR', '1') == '0' or _get_engine() is None:
         return []
     with _RENDER_LOCK, pymupdf.open(stream=data, filetype='pdf') as doc:
-        shots = [(clip, doc[page - 1].get_pixmap(clip=clip, dpi=DPI)) for clip in rasters]
+        area = doc[page - 1].rect
+        # 그림만 찍은 것과 둘레를 조금 넓혀 찍은 것(가장자리에 붙은 글자) 둘 다 읽고, 겹치면 점수가 높은 쪽
+        clips = rasters + [r + (-8, -8, 8, 8) & area for r in rasters]
+        shots = [(clip, doc[page - 1].get_pixmap(clip=clip, dpi=DPI)) for clip in clips]
     global _failed
     labels = []
     for clip, pix in shots:
@@ -68,7 +73,7 @@ def figure_labels(data: bytes, page: int, figures: list[dict], known: list[list[
         scale = 72 / DPI
         for box, text, score in zip(out.boxes if out.boxes is not None else [], out.txts or [], out.scores or []):
             text = str(text).strip()
-            if score < MIN_SCORE or not HANGUL.search(text):
+            if score < MIN_SCORE or not HANGUL.search(text) or GARBLED.search(text):
                 continue
             xs, ys = [int(p[0]) for p in box], [int(p[1]) for p in box]
             px = (min(xs), min(ys), max(xs), max(ys))
@@ -79,5 +84,28 @@ def figure_labels(data: bytes, page: int, figures: list[dict], known: list[list[
             size = round(rect.height * 0.72, 1)
             labels.append({'type': 'label', 'level': 0, 'text': text, 'rect': _r(rect), 'size': size, 'color': color,
                            'bold': False, 'align': 'center', 'box': _r(label_box(rect, size)), 'ocr': True,
-                           'fill': fill, 'lines': [_r(rect + (-1, -1, 1, 1))]})
-    return labels
+                           'fill': fill, 'lines': [_r(rect + (-1, -1, 1, 1))], 'score': score})
+    labels.sort(key=lambda x: -x['score'])
+    return [{k: v for k, v in x.items() if k != 'score'} for x in _stack(labels)]
+
+
+def _stack(labels: list[dict]) -> list[dict]:
+    """위아래로 붙은 가운데 정렬 두 줄("데이터 분석과" + "접근법")은 한 글로 번역. 그림이 달라도 합침"""
+    kept: list[dict] = []
+    for label in labels:  # 앞에 있는 것(점수가 높은 것)을 남김
+        r = pymupdf.Rect(label['rect'])
+        if not any((r & pymupdf.Rect(o['rect'])).get_area() > 0.5 * min(r.get_area(), pymupdf.Rect(o['rect']).get_area()) for o in kept):
+            kept.append(label)  # 같은 글을 두 번 읽은 경우는 하나만
+    out: list[dict] = []
+    for label in sorted(kept, key=lambda x: (x['rect'][1], x['rect'][0])):
+        r = pymupdf.Rect(label['rect'])
+        prev = next((o for o in reversed(out) if 0.7 < o['size'] / label['size'] < 1.45
+                     and -0.3 * label['size'] <= r.y0 - o['rect'][3] < 0.6 * label['size']
+                     and abs((r.x0 + r.x1) - (o['rect'][0] + o['rect'][2])) / 2 < max(r.width, o['rect'][2] - o['rect'][0]) / 2), None)
+        if prev is None:
+            out.append(dict(label))
+            continue
+        union = pymupdf.Rect(prev['rect']) | r
+        prev.update(text=f"{prev['text']} {label['text']}", rect=_r(union), lines=prev['lines'] + label['lines'],
+                    box=_r(label_box(union, prev['size'])), wrap=True)
+    return out

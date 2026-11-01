@@ -1,6 +1,10 @@
 // 확장 화면(교안 뷰어·복습·리포트) 문구. LMS 안 서랍은 한국어 + 크롬 번역
 const I18N = {
   ko: {
+    pageNo: n => `${n}쪽`,
+    pageOf: (n, total) => `${n} / ${total}쪽`,
+    pageRange: (a, b) => `${a}–${b}쪽`,
+    reportLead: (q, a, n, B, A) => ['지금까지 복습을 ', B(`${q}번`), ' 했고 정답률은 ', A(a), '입니다. 교안에 대해 질문은 ', B(`${n}번`), ' 했습니다.'],
     langName: '한국어',
     viewerTitle: '교안',
     reviewTitle: '복습',
@@ -45,7 +49,8 @@ const I18N = {
     noText: '이 페이지에는 글이 없습니다 (그림만 있음).',
     needsReview: '용어집에 아직 번역이 없는 용어가 있습니다.',
     savePdf: 'PDF 저장',
-    preparingPdf: (i, n) => `인쇄 준비 중… 그림 ${i} / ${n}`,
+    converting: '번역본 PDF로 변환 중…',
+    preparingPdf: (i, n) => `(그림 ${i} / ${n})`,
     chatTitle: '이 교안에 대해 질문하기',
     chatHint: '답은 이 교안 내용으로만, 쪽 번호와 함께 드립니다.',
     chatPlaceholder: '질문을 입력하세요… (Enter 보내기, Shift+Enter 줄바꿈)',
@@ -97,6 +102,11 @@ const I18N = {
     wrongCount: n => `${n}번 틀림`
   },
   en: {
+    pageNo: n => `p. ${n}`,
+    pageOf: (n, total) => `Page ${n} / ${total}`,
+    pageRange: (a, b) => `pp. ${a}–${b}`,
+    reportLead: (q, a, n, B, A) => ['You finished ', B(`${q} review${q === 1 ? '' : 's'}`), ' and answered ', A(a), ' correctly. You asked ',
+      B(`${n} question${n === 1 ? '' : 's'}`), ' about your materials.'],
     langName: 'English',
     viewerTitle: 'Course material',
     reviewTitle: 'Review',
@@ -141,7 +151,8 @@ const I18N = {
     issueKorean: 'A lot of Korean text was left untranslated.',
     issueOther: 'Other',
     savePdf: 'Save PDF',
-    preparingPdf: (i, n) => `Preparing to print… image ${i} of ${n}`,
+    converting: 'Converting to a translated PDF…',
+    preparingPdf: (i, n) => `(image ${i} of ${n})`,
     noText: 'No text on this page (images only).',
     needsReview: 'Some glossary terms have no translation yet.',
     // 챗봇
@@ -198,6 +209,10 @@ const I18N = {
     wrongCount: n => `${n} wrong`
   },
   ru: {
+    pageNo: n => `с. ${n}`,
+    pageOf: (n, total) => `Стр. ${n} / ${total}`,
+    pageRange: (a, b) => `с. ${a}–${b}`,
+    reportLead: (q, a, n, B, A) => ['Пройдено повторений: ', B(String(q)), ', правильных ответов — ', A(a), '. Вопросов по материалам: ', B(String(n)), '.'],
     langName: 'Русский',
     viewerTitle: 'Материал курса',
     reviewTitle: 'Повторение',
@@ -240,7 +255,8 @@ const I18N = {
     issueKorean: 'Осталось много непереведённого корейского текста.',
     issueOther: 'Другое',
     savePdf: 'Сохранить PDF',
-    preparingPdf: (i, n) => `Готовим печать… изображение ${i} из ${n}`,
+    converting: 'Преобразуем в переведённый PDF…',
+    preparingPdf: (i, n) => `(изображение ${i} из ${n})`,
     noText: 'На странице нет текста (только изображения).',
     needsReview: 'У некоторых терминов глоссария пока нет перевода.',
     chatTitle: 'Вопрос по материалу',

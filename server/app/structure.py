@@ -243,6 +243,75 @@ def _columns(items: list[dict], width: float, height: float) -> tuple[list[dict]
         it['type'] == 'text' for it in right) else None
 
 
+def highlights(page: pymupdf.Page, texts: list[pymupdf.Rect]) -> list[pymupdf.Rect]:
+    """글 뒤의 형광 표시(글 줄 높이 정도의 채운 사각형). 번역문 길이가 달라 어긋나므로 배경에서 지움"""
+    out = []
+    for d in page.get_drawings():
+        r = pymupdf.Rect(d['rect'])
+        if d.get('fill') is None or r.is_empty or r.height < 4:
+            continue
+        if any(r.height <= t.height * 1.8 and (r & (t + (-10, -2, 10, 2))).get_area() >= 0.4 * r.get_area() for t in texts):
+            out.append(r)
+    return out
+
+
+def _walls(page: pymupdf.Page, skip: list[pymupdf.Rect] = ()) -> tuple[list[tuple[pymupdf.Rect, int]], list[tuple[pymupdf.Rect, int]]]:
+    """(벽, 채운 도형). 벽 = 표의 선, 카드·칸의 테두리 (선 하나는 폭 0인 Rect). 번역문은 벽을 넘지 않음. skip: 형광 표시"""
+    width, height = page.rect.width, page.rect.height
+    walls, fills = [], []
+    for d in page.get_drawings():
+        r, seq = pymupdf.Rect(d['rect']), d.get('seqno', 0)
+        if r.width > width * 0.95 and r.height > height * 0.95 or r in skip:
+            continue  # 페이지 배경, 형광 표시
+        if d.get('fill') is not None and min(r.width, r.height) > 4:
+            fills.append((r, seq))
+        for it in d['items']:
+            if it[0] == 'l':
+                p, q = it[1], it[2]
+                if abs(p.y - q.y) < 1 and abs(p.x - q.x) > 8 or abs(p.x - q.x) < 1 and abs(p.y - q.y) > 8:
+                    walls.append((pymupdf.Rect(min(p.x, q.x), min(p.y, q.y), max(p.x, q.x), max(p.y, q.y)), seq))
+            elif it[0] == 're':
+                x = pymupdf.Rect(it[1])
+                if min(x.width, x.height) <= 2.5 and max(x.width, x.height) > 8:  # 가는 사각형 = 선
+                    cx, cy = (x.x0 + x.x1) / 2, (x.y0 + x.y1) / 2
+                    walls.append((pymupdf.Rect(x.x0, cy, x.x1, cy) if x.width > x.height else pymupdf.Rect(cx, x.y0, cx, x.y1), seq))
+        if min(r.width, r.height) > 4 and (d.get('fill') is not None or d.get('closePath') or
+                                           any(it[0] == 're' for it in d['items'])):
+            walls += [(pymupdf.Rect(r.x0, r.y0, r.x1, r.y0), seq), (pymupdf.Rect(r.x0, r.y1, r.x1, r.y1), seq),
+                      (pymupdf.Rect(r.x0, r.y0, r.x0, r.y1), seq), (pymupdf.Rect(r.x1, r.y0, r.x1, r.y1), seq)]
+    return walls, fills
+
+
+def _touch(a: pymupdf.Rect, b: pymupdf.Rect) -> bool:
+    """겹침 (폭 0인 선도 셈)"""
+    return a.x0 <= b.x1 and a.x1 >= b.x0 and a.y0 <= b.y1 and a.y1 >= b.y0
+
+
+def _visible_walls(r: pymupdf.Rect, walls: list, fills: list, *texts: pymupdf.Rect) -> list[pymupdf.Rect]:
+    """글 r에 걸리는 벽. 글 아래 나중에 칠한 도형에 가려진 선(카드 뒤를 지나는 선)과 글(r, texts)의 밑줄은 뺌"""
+    under = [(f, fs) for f, fs in fills if (f + (-2, -2, 2, 2)).contains(r)]
+    out = []
+    for w, seq in walls:
+        if any(seq < fs and _touch(w, f + (1, 1, -1, -1)) for f, fs in under):
+            continue
+        if w.height == 0 and any(t.y1 - 2 <= w.y0 <= t.y1 + 3 and w.x0 >= t.x0 - 3 and w.x1 <= t.x1 + 3 for t in (r, *texts)):
+            continue
+        out.append(w)
+    return out
+
+
+def _between(a: pymupdf.Rect, b: pymupdf.Rect, walls: list[pymupdf.Rect]) -> bool:
+    """두 글 사이에 벽이 있으면 다른 칸 → 합치지 않음"""
+    left, right = sorted((a, b), key=lambda x: x.x0)
+    top, bottom = sorted((a, b), key=lambda x: x.y0)
+    for w in walls:
+        if w.width == 0 and left.x1 - 1 <= w.x0 <= right.x0 + 1 and w.y0 < min(a.y1, b.y1) and w.y1 > max(a.y0, b.y0):
+            return True
+        if w.height == 0 and top.y1 - 1 <= w.y0 <= bottom.y0 + 1 and w.x0 < min(a.x1, b.x1) and w.x1 > max(a.x0, b.x0):
+            return True
+    return False
+
+
 def _merge_labels(labels: list[dict]) -> list[dict]:
     """그림 속 한 칸에 두 줄로 적힌 글("이전 블록의" + "Hash")은 한 글로 합쳐 번역"""
     out: list[dict] = []
@@ -251,11 +320,12 @@ def _merge_labels(labels: list[dict]) -> list[dict]:
         prev = next((o for o in reversed(out) if abs(o['size'] - label['size']) < 1 and o['text'] != label['text']
                      and -label['size'] * 0.4 <= r.y0 - o['rect'].y1 < label['size'] * 0.6
                      and min(r.x1, o['rect'].x1) - max(r.x0, o['rect'].x0) > 0.5 * min(r.width, o['rect'].width)), None)
-        if prev is None or label.get('mono') or prev.get('mono'):
+        if prev is None or label.get('mono') or prev.get('mono') or label.get('bullet'):  # 글머리표 줄은 새 항목
             out.append(dict(label, lines=list(label['lines'])))
         else:
             prev['text'] += ' ' + label['text']
             prev['rect'] = prev['rect'] | r
+            prev['outer'] = prev.get('outer', prev['rect']) | label.get('outer', r)
             prev['lines'] += label['lines']
     return out
 
@@ -304,7 +374,7 @@ def page_blocks(page: pymupdf.Page, template: Template | None = None) -> tuple[l
         mono = first is not None and MONO.search(first['font']) is not None
         owner = next((f for f in figures if (f['rect'] & box).get_area() > box.get_area() * 0.5), None)
         if owner is not None:  # 그림 안의 글자 → 그림 위 같은 자리에 번역 (표 속 코드는 한글만)
-            owner['labels'].append({**base, 'mono': mono, 'codes': code_parts(text, boxes, base) if mono else []})
+            owner['labels'].append({**base, 'mono': mono, 'bullet': bullet, 'codes': code_parts(text, boxes, base) if mono else []})
             continue
         bullet = bullet or any(abs(y - box.y0) < size * 0.6 and x1 <= box.x0 + 2 and box.x0 - x1 < 40 for y, x1, _ in marks)
         mono = mono and not bullet
@@ -313,18 +383,37 @@ def page_blocks(page: pymupdf.Page, template: Template | None = None) -> tuple[l
     items.sort(key=lambda it: (round(it['y'] / 4), it['x']))
     items, split = _columns(items, width, height)
 
+    marked = highlights(page, [pymupdf.Rect(line['bbox']) for line in lines])
+    walls, fills = _walls(page, marked)
+    small = [pymupdf.Rect(i['bbox']) for i in page.get_image_info() if pymupdf.Rect(i['bbox']).height < 40]
+
+    def inline(it: dict) -> bool:
+        """같은 줄 바로 옆에 다른 글·글자 그림(링크 등)이 붙어 있는 줄. 윗줄에 합치면 옆 글과 겹침"""
+        r = it['rect']
+        near = lambda o: min(abs(o.x0 - r.x1), abs(r.x0 - o.x1)) < it['size'] * 2  # noqa: E731
+        return any(o is not it and o['type'] == 'text' and abs(o['y'] - it['y']) < 4 and near(o['rect']) for o in items) \
+            or any(o.y0 < r.y1 and o.y1 > r.y0 and near(o) for o in small)
+
     merged: list[dict] = []
     for it in items:
-        prev = merged[-1] if merged else None
-        join = None
-        if prev and it['type'] == prev['type'] == 'text' and it['mono'] and prev['mono'] \
-                and 0 < it['y'] - prev['last_y'] < prev['size'] * 2.2:
-            join = '\n'  # 이어지는 코드 줄은 한 덩어리
-        elif prev and it['type'] == prev['type'] == 'text' and not it['mono'] and not prev['mono'] \
-                and abs(it['size'] - prev['size']) < 1 and not it['bullet']:
-            same_line = abs(it['y'] - prev['y']) < 4
-            follows = 0 < it['y'] - prev['last_y'] < prev['size'] * 1.6 and it['x'] >= prev['x'] - 2
-            join = ' ' if same_line or follows else None
+        last = merged[-1] if merged else None
+        prev, join = None, None
+        if it['type'] == 'text' and it['mono']:
+            if last and last['type'] == 'text' and last['mono'] and 0 < it['y'] - last['last_y'] < last['size'] * 2.2:
+                prev, join = last, '\n'  # 이어지는 코드 줄은 한 덩어리
+        elif it['type'] == 'text' and not it['bullet'] and not it['text'].startswith(('※', '*')):
+            # 같은 줄 바로 옆, 또는 바로 위 줄의 이어지는 글. 표·카드가 나란하면 윗줄이 몇 칸 앞에 있음
+            for m in reversed(merged[-8:]):
+                if m['type'] != 'text' or m['mono'] or abs(it['size'] - m['size']) >= 1:
+                    continue
+                same_line = m is last and abs(it['y'] - m['y']) < 4 and it['rect'].x0 - m['rect'].x1 < m['size'] * 2
+                below = 0 < it['y'] - m['last_y'] < m['size'] * 1.9 and not inline(it)
+                centered = abs((it['rect'].x0 + it['rect'].x1) - (m['rect'].x0 + m['rect'].x1)) < m['size'] * 2 \
+                    and it['rect'].x0 > m['rect'].x0 + 4  # 가운데 정렬된 여러 줄 제목
+                follows = below and (m['x'] - 2 <= it['x'] < m['rect'].x1 or centered)
+                if (same_line or follows) and not _between(m['rect'], it['rect'], _visible_walls(it['rect'], walls, fills, *m['lines'])):
+                    prev, join = m, ' '
+                    break
         if join:
             prev['text'] += join + it['text']
             prev['rect'] = prev['rect'] | it['rect']
@@ -349,8 +438,11 @@ def page_blocks(page: pymupdf.Page, template: Template | None = None) -> tuple[l
     lefts = sorted({round(it['x']) for it in texts if not it['mono'] and it is not title})
 
     def block(kind: str, level: int, it: dict) -> dict:
-        return {'type': kind, 'level': level, 'text': it['text'], 'rect': it['rect'], 'outer': it.get('outer', it['rect']),
-                'size': round(it['size'], 1), 'color': it['color'], 'bold': it['bold'], 'lines': it['lines']}
+        b = {'type': kind, 'level': level, 'text': it['text'], 'rect': it['rect'], 'outer': it.get('outer', it['rect']),
+             'size': round(it['size'], 1), 'color': it['color'], 'bold': it['bold'], 'lines': it['lines']}
+        if kind in ('bullet', 'text') and it['lines'] and it['lines'][0].x0 - it['rect'].x0 > 3:
+            b['indent'] = round(it['lines'][0].x0 - it['rect'].x0, 1)  # 첫 줄만 글머리 기호 뒤에서 시작 (다음 줄은 기호 아래)
+        return b
 
     def code_blocks(parts: list[dict], level: int, limit: float) -> list[dict]:
         out, first = [], len(blocks)
@@ -366,7 +458,12 @@ def page_blocks(page: pymupdf.Page, template: Template | None = None) -> tuple[l
     blocks = []
     for it in merged:
         if it['type'] == 'image':
-            for label in _merge_labels(it['figure']['labels']):
+            labels = _merge_labels(it['figure']['labels'])
+            starts = Counter(round(x['rect'].x0 / 4) for x in labels if x.get('bullet') and not x.get('mono'))
+            for label in labels:
+                if label.get('bullet') and not label.get('mono') and starts[round(label['rect'].x0 / 4)] >= 3:
+                    blocks.append(block('bullet', 0, label))  # 상자 안 글머리표 목록: 본문처럼 왼쪽 정렬, 줄마다 따로
+                    continue
                 b = block('label', 0, label)
                 cell = _cell(label['rect'], it['figure'].get('cells', []))
                 if label.get('mono'):  # 표 속 코드: 코드는 그대로, 한글만 따로 번역
@@ -386,7 +483,9 @@ def page_blocks(page: pymupdf.Page, template: Template | None = None) -> tuple[l
             blocks += code_blocks(it['comments'], level, panel.x1 - 6 if panel is not None else it['rect'].x1 + 4)
     blocks += [dict(block('text', 0, d), deco=True) for d in deco if needs_translation(d['text'])]
     fixed = mark_rects + [d['outer'] for d in deco if not needs_translation(d['text'])]  # 쪽 번호 등도 피함
-    _boxes(blocks, figures, width, height, fixed, split)
+    _boxes(blocks, figures, width, height, fixed, split, (walls, fills))
+    for b in blocks:  # 이 글 뒤의 형광 표시 (배경에서 같이 지움)
+        b['hl'] = [_r(m) for m in marked if any((m & r).get_area() >= 0.4 * m.get_area() for r in b['lines'])]
     for b in blocks:
         b['rect'] = _r(b['rect'])
         b['lines'] = [_r(r) for r in b['lines']]
@@ -407,15 +506,17 @@ def label_box(r: pymupdf.Rect, size: float) -> pymupdf.Rect:
 
 
 def _boxes(blocks: list[dict], figures: list[dict], width: float, height: float,
-           marks: list[pymupdf.Rect] = (), split: float | None = None) -> None:
+           marks: list[pymupdf.Rect] = (), split: float | None = None, lines: tuple = ([], [])) -> None:
     """번역문이 들어갈 자리(box). 글 덩어리는 오른쪽·아래로 다른 글·글머리 기호·그림을 만날 때까지 넓힘
     (번역문은 보통 한국어보다 길어서). 두 단 슬라이드는 단 경계를 넘지 않음.
     그림 속 글자는 원래 칸, 코드 속 한글은 원래 자리 한 줄"""
     others = [(b, b.get('outer', b['rect'])) for b in blocks if b['type'] not in ('comment', 'codetext', 'codeline')] + \
         [(None, f['rect']) for f in figures] + [(None, m) for m in marks]
+    every = others
     for b in blocks:
         r, s = b['rect'], b['size']
         floor = height if b.get('deco') else FOOTER * height
+        others = every + [(None, w) for w in _visible_walls(r, *lines)]  # 표의 선·카드 테두리를 넘지 않음
         if b['type'] == 'label':
             b['align'] = 'center'
             cell = b.pop('cell', None)
@@ -427,7 +528,8 @@ def _boxes(blocks: list[dict], figures: list[dict], width: float, height: float,
                 b['align'] = 'left'  # 표의 왼쪽 정렬 칸
         elif b['type'] in ('comment', 'codetext', 'codeline'):
             box = pymupdf.Rect(r.x0, r.y0 - 1, max(b.pop('limit', width - 6), r.x1), r.y1 + 1)
-        elif b['type'] in ('heading', 'text') and abs((r.x0 + r.x1) / 2 - width / 2) < width * 0.04 and r.x0 > width * 0.12:
+        elif b['type'] in ('heading', 'text') and abs((r.x0 + r.x1) / 2 - width / 2) < width * 0.04 and r.x0 > width * 0.12 \
+                and not any(o.width == 0 and r.x0 - 25 <= o.x0 <= r.x0 and o.y0 < r.y1 and o.y1 > r.y0 for _, o in others):
             # 가운데 정렬된 제목·부제목: 가운데를 기준으로 양쪽으로 넓힘
             cx = (r.x0 + r.x1) / 2
             left = max([o.x1 + 6 for x, o in others if x is not b and o.x1 <= r.x0 + 2
@@ -435,7 +537,7 @@ def _boxes(blocks: list[dict], figures: list[dict], width: float, height: float,
             right = min([o.x0 - 6 for x, o in others if x is not b and o.x0 >= r.x1 - 2
                          and o.y0 < r.y1 and o.y1 > r.y0] + [width * 0.94])
             half = max(min(cx - left, right - cx), r.width / 2)
-            bottom = min([o.y0 - 2 for x, o in others if x is not b and o.y0 >= r.y1 - 2
+            bottom = min([o.y0 - 2 for x, o in others if x is not b and o.y0 > r.y0 + s * 0.5
                           and o.x0 < cx + half and o.x1 > cx - half] + [floor])
             box = pymupdf.Rect(cx - half, r.y0, cx + half, max(bottom, r.y1))
             b['align'] = 'center'
@@ -446,7 +548,7 @@ def _boxes(blocks: list[dict], figures: list[dict], width: float, height: float,
             if split is not None and r.x0 < split and r.y0 >= 0.18 * height:
                 right = min(right, split - 8)  # 왼쪽 단 글은 오른쪽 단으로 넘어가지 않음
             right = max(right, r.x1)
-            bottom = min([o.y0 - 2 for x, o in others if x is not b and o.y0 >= r.y1 - 2
+            bottom = min([o.y0 - 2 for x, o in others if x is not b and o.y0 > r.y0 + s * 0.5
                           and o.x0 < right and o.x1 > r.x0] + [floor])
             box = pymupdf.Rect(r.x0, r.y0, right, max(bottom, r.y1))
         b['box'] = _r(box)
@@ -510,10 +612,10 @@ _RENDER_LOCK = Lock()  # PyMuPDF는 여러 스레드에서 동시에 쓰면 안�
 
 
 def render_page(data: bytes, page: int, erase: list[list[list[float]]], fills: list[tuple[list[float], str]] = (),
-                zoom: float = 2.0) -> tuple[bytes, bytes | None]:
+                zoom: float = 2.0, covers: list[list[float]] = ()) -> tuple[bytes, bytes | None]:
     """(원본 페이지 JPEG, 번역할 글자를 지운 배경 JPEG 또는 None).
     erase: 블록마다 지울 줄 위치. 글자를 감싸는 그림자·광택 그림도 지움. 그림·도형·글머리 기호·장식은 남김.
-    fills: 그림 속 글자(OCR) 자리를 둘레 색으로 덮음"""
+    fills: 그림 속 글자(OCR) 자리를 둘레 색으로 덮음. covers: 지울 형광 표시(그 안에 다 들어가는 도형만 지움)"""
     with _RENDER_LOCK, pymupdf.open(stream=data, filetype='pdf') as doc:
         p = doc[page - 1]
         matrix = pymupdf.Matrix(zoom, zoom)
@@ -540,6 +642,9 @@ def render_page(data: bytes, page: int, erase: list[list[list[float]]], fills: l
             p.add_redact_annot(pymupdf.Rect(r.x0 + 1, r.y0 + r.height * 0.25, r.x1 - 0.5, r.y1 - r.height * 0.25), fill=False)
         if rects:
             p.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE, graphics=pymupdf.PDF_REDACT_LINE_ART_NONE)
+        for r in covers:  # 한꺼번에 적용하면 일부만 지워져서 하나씩
+            p.add_redact_annot(pymupdf.Rect(r) + (-1, -1, 1, 1), fill=False)
+            p.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE, graphics=pymupdf.PDF_REDACT_LINE_ART_REMOVE_IF_COVERED)
         done: set[int] = set()
         for _ in range(4):  # 그림자가 여러 겹(그림 + 마스크)이면 지운 뒤 다시 확인
             todo = [x for x in shadow_xrefs() if x not in done]

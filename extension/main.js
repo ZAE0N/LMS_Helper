@@ -17,7 +17,7 @@
 
   const title = { doc: t.viewerTitle, review: t.reviewTitle, report: t.reportTitle }[mode];
   const name = params.get('name') || '';
-  document.getElementById('title').textContent = mode === 'report' ? title : `${title} · ${name}`;
+  document.getElementById('title').textContent = mode === 'report' ? title : mode === 'doc' ? name || title : `${title} · ${name}`;
   document.getElementById('sub').textContent = params.get('courseName') || '';
   document.title = `${title}${name && mode !== 'report' ? ` · ${name}` : ''} — LMS Helper`;
 
@@ -25,9 +25,11 @@
 
   async function open(password = null) {
     try {
-      const doc = await App.loadDoc(text => App.status(text), { password });
+      // save=1: 서랍의 "번역본 ⬇" → 번역(처음이면 변환) 후 바로 인쇄 → PDF로 저장
+      const save = mode === 'doc' && params.get('save') === '1';
+      const doc = await App.loadDoc(text => App.status(save ? `${t.converting} · ${text}` : text), { password });
       if (mode === 'review') await QuizView.render(doc);
-      else DocView.render(doc);
+      else DocView.render(doc, { autoSave: save });
     } catch (e) {
       if (e instanceof App.PasswordError) {
         return App.askPassword(e.wrong, pw => open(pw), () => App.status(t.passwordCancelled, { error: true, retry: () => open() }));
