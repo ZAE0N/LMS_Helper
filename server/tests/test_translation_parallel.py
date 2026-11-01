@@ -16,7 +16,7 @@ def pages(tmp_path, monkeypatch):
     monkeypatch.setattr(service, 'DATA_DIR', tmp_path)
     data = [{'page': i + 1, 'text': f'페이지 내용 {i}', 'size': [720, 540], 'blocks': []} for i in range(5)]
     monkeypatch.setattr(service, 'analyze_pdf', lambda _: data)
-    monkeypatch.setattr(service, 'render_page', lambda *_: (b'jpg', None))
+    monkeypatch.setattr(service, 'render_page', lambda *_, **__: (b'jpg', None))
     return data
 
 

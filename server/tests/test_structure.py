@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import figure_ocr, main, service
-from app.structure import analyze_pdf, apply_marked, code_parts, comment_part, marked_text
+from app.structure import analyze_pdf, apply_marked, code_parts, comment_part, marked_text, render_page
 
 
 def slide_pdf() -> bytes:
@@ -120,9 +120,20 @@ def test_documents_have_translated_blocks_and_page_images(setup, monkeypatch):
         assert client.get(f"/documents/{doc['doc_id']}/figures/{bad}").status_code == 404
 
 
+def test_broken_markers_are_retried_unit_by_unit(setup, monkeypatch):
+    client = setup
+    monkeypatch.setattr(service, 'translate_page', fake_translate(broken=True))
+    asked = []
+    monkeypatch.setattr(service, 'translate_text', lambda text, *_: asked.append(text) or {'translated': f'RU:{text}', 'terms': [], 'issues': []})
+    page = client.post('/documents', files={'file': ('a.pdf', slide_pdf())}, data={'lang': 'ru'}).json()['pages'][0]
+    assert '강의 내용' in asked and all('⟦B' not in t for t in asked)
+    assert page['blocks'][0]['translated'] == 'RU:강의 내용' and page['background']
+
+
 def test_broken_markers_fall_back_to_page_translation(setup, monkeypatch):
     client = setup
     monkeypatch.setattr(service, 'translate_page', fake_translate(broken=True))
+    monkeypatch.setattr(service, 'retry_marked', lambda *_: None)
     page = client.post('/documents', files={'file': ('a.pdf', slide_pdf())}, data={'lang': 'ru'}).json()['pages'][0]
     assert all('translated' not in b for b in page['blocks'])
     assert page['translated'] and '⟦B' not in page['translated']
@@ -187,7 +198,7 @@ def test_raster_figure_text_is_found_by_ocr_and_covered(setup, monkeypatch):
     assert len(labels) == 1 and labels[0]['translated'] == 'RU:개인키'
     x0, y0, x1, y1 = labels[0]['rect']
     scale = 72 / figure_ocr.DPI
-    assert abs(x0 - (200 + 40 * scale)) < 1 and abs(y1 - (150 + 100 * scale)) < 1  # 그림 픽셀 → 페이지 좌표
+    assert abs(x0 - (192 + 40 * scale)) < 1 and abs(y1 - (142 + 100 * scale)) < 1  # 그림 픽셀 → 페이지 좌표 (둘레 8pt 넓혀 찍음)
     assert re.fullmatch(r'#[0-9a-f]{6}', labels[0]['color']) and 'fill' not in labels[0] and 'lines' not in labels[0]
     assert '개인키' not in page['original']  # 챗봇·문제용 글은 PDF 글자만
     background = client.get(f"/documents/{doc['doc_id']}/figures/{page['background']}")
@@ -327,3 +338,46 @@ def test_card_text_stays_in_its_card_and_line_behind_cards_is_ignored():
         assert x0 <= h['box'][0] and h['box'][2] <= x0 + 250 and h['box'][3] <= 180
         b = next(b for b in blocks if b['text'] == body)
         assert b['box'][2] <= x0 + 250 and b['box'][3] > 300  # 카드 뒤의 선은 벽이 아님
+
+
+def test_bullet_list_in_box_is_split_per_item_left_aligned_and_highlights_are_erased():
+    doc = pymupdf.open()
+    page = doc.new_page(width=960, height=540)
+    page.draw_rect(pymupdf.Rect(100, 100, 860, 460), color=(0.4, 0.7, 0.9), dashes='[4] 0')  # 점선 상자
+    page.draw_rect(pymupdf.Rect(140, 140, 820, 420), color=None, fill=(0.95, 0.95, 0.95))
+    page.draw_rect(pymupdf.Rect(176, 158, 330, 182), color=None, fill=(0.76, 0.91, 0.98))  # 형광 표시
+    items = ['스위치 부근에 물질을 놓지 않는다', '분전반 안에 물건을 두지 않는다', '전원을 차단하고 연락한다']
+    for k, text in enumerate(items):
+        page.insert_text((160, 176 + k * 30), '- ' + text, fontname='korea', fontsize=16)
+    p = analyze_pdf(doc.tobytes())[0]
+    blocks = [b for b in p['blocks'] if b['text'] in items]
+    assert len(blocks) == 3 and all(b['type'] == 'bullet' and b.get('align') != 'center' for b in blocks)
+    assert blocks[0]['hl'] and not blocks[1]['hl']
+    _, plain = render_page(doc.tobytes(), 1, [blocks[1]['lines']])
+    _, cleaned = render_page(doc.tobytes(), 1, [blocks[0]['lines']], covers=blocks[0]['hl'])
+    def blue(jpeg: bytes) -> int:
+        pix = pymupdf.Pixmap(jpeg)
+        return sum(1 for x in range(360, 640, 4) for y in range(320, 360, 4) if pix.pixel(x, y)[2] > 240 and pix.pixel(x, y)[0] < 210)
+    assert blue(plain) > 50 and blue(cleaned) == 0
+
+
+def test_loose_line_spacing_and_centered_titles_join_into_one_unit():
+    doc = pymupdf.open()
+    page = doc.new_page(width=960, height=540)
+    page.insert_text((100, 300), '- 연구실 안전유지 관리 및', fontname='korea', fontsize=18)
+    page.insert_text((100, 333), '사고예방을 위한 안전환경', fontname='korea', fontsize=18)  # 줄 간격 1.8배
+    page.insert_text((400, 150), '연구실안전관리담당자', fontname='korea', fontsize=26)
+    page.insert_text((430, 183), '실습실 책임자', fontname='korea', fontsize=26)  # 가운데 정렬된 둘째 줄
+    texts = [b['text'] for b in analyze_pdf(doc.tobytes())[0]['blocks']]
+    assert '연구실 안전유지 관리 및 사고예방을 위한 안전환경' in texts
+    assert '연구실안전관리담당자 실습실 책임자' in texts
+
+
+def test_ocr_two_line_titles_are_joined_even_from_different_images():
+    def label(text, rect):
+        return {'type': 'label', 'text': text, 'rect': rect, 'size': 27.0, 'lines': [rect], 'box': rect, 'ocr': True, 'fill': '#ffffff'}
+    out = figure_ocr._stack([label('데이터 분석과', [600, 462, 790, 500]), label('접근법', [679, 510, 772, 547]),
+                             label('데이터', [1188, 461, 1278, 500])])
+    assert sorted(x['text'] for x in out) == ['데이터', '데이터 분석과 접근법']
+    joined = next(x for x in out if x['text'] == '데이터 분석과 접근법')
+    assert joined['rect'] == [600, 462, 790, 547] and len(joined['lines']) == 2 and joined['wrap']

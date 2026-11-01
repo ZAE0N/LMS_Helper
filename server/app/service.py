@@ -8,13 +8,13 @@ from threading import Lock
 from . import glossary as g
 from .figure_ocr import figure_labels
 from .llm import LLM
-from .structure import MARK, analyze_pdf, apply_marked, marked_text, render_page
-from .translate import LANGS, PROMPT_VERSION, Cache, glossary_version, translate_page
+from .structure import MARK, analyze_pdf, apply_marked, marked_text, render_page, units
+from .translate import LANGS, PROMPT_VERSION, Cache, glossary_version, translate_page, translate_text
 
 ROOT = Path(__file__).resolve().parent.parent
 GLOSSARY_DIR = Path(os.getenv("GLOSSARY_DIR", ROOT / "glossary"))
 DATA_DIR = Path(os.getenv("DATA_DIR", ROOT / "data"))
-STRUCTURE_VERSION = "slide-v6"  # 페이지 형식(blocks 등)을 바꾸면 올려서 교안을 새로 만들게 함
+STRUCTURE_VERSION = "slide-v7"  # 페이지 형식(blocks 등)을 바꾸면 올려서 교안을 새로 만들게 함
 _DOCUMENT_LOCKS = [Lock() for _ in range(64)]
 _PAGE_LOCKS = [Lock() for _ in range(64)]
 
@@ -51,7 +51,7 @@ def translate_pdf(data: bytes, lang: str, course: str | None, llm: LLM, *, worke
             page = {"page": p["page"], "original": p["text"], "translated": p["text"], "terms": [], "issues": [], "size": p["size"]}
             save_pages(doc_id, data, page, blocks)
             for b in blocks:
-                for key in ("lines", "fill", "runs", "parts"):
+                for key in ("lines", "fill", "runs", "parts", "hl"):
                     b.pop(key, None)
             page["blocks"] = blocks
             return page
@@ -63,6 +63,10 @@ def translate_pdf(data: bytes, lang: str, course: str | None, llm: LLM, *, worke
             if (r := pages_cache.get(k)) is None:
                 r = translate_page(source, lang, terms, llm)
                 pages_cache.put(k, r)
+            if source != p["text"] and not apply_marked(r["translated"], copy.deepcopy(blocks)):
+                if (fixed := retry_marked(blocks, lang, terms, llm)) is not None:  # 예전에 저장된 어긋난 번역도 다시 맞춤
+                    r = fixed
+                    pages_cache.put(k, r)
         page = {"page": p["page"], "original": p["text"], **r, "size": p["size"]}
         # 덩어리별 번역이 어긋나면 블록의 translated는 없음 → 확장이 원본 페이지 + 페이지 전체 번역으로 보여 줌
         if source == p["text"] or not apply_marked(r["translated"], blocks):
@@ -71,7 +75,7 @@ def translate_pdf(data: bytes, lang: str, course: str | None, llm: LLM, *, worke
         page["translated"] = MARK.sub("", r["translated"]).replace("\n\n", "\n").strip()
         save_pages(doc_id, data, page, blocks)
         for b in blocks:
-            for key in ("lines", "fill", "runs", "parts"):
+            for key in ("lines", "fill", "runs", "parts", "hl"):
                 b.pop(key, None)
         page["blocks"] = blocks
         return page
@@ -106,6 +110,16 @@ def translate_pdf(data: bytes, lang: str, course: str | None, llm: LLM, *, worke
         return result
 
 
+def retry_marked(blocks: list[dict], lang: str, terms: list, llm: LLM) -> dict | None:
+    """덩어리 표시(⟦B번호⟧)가 어긋난 페이지: 덩어리마다 따로 번역해 다시 맞춤 (같은 용어집 파이프라인)"""
+    wanted = units(blocks)
+    if not wanted or len(wanted) > 40:
+        return None
+    parts = [translate_text(text, lang, terms, llm) for _, text in wanted]
+    return {"translated": "\n\n".join(f"⟦B{n}⟧ {x['translated']}" for n, x in enumerate(parts)),
+            "terms": sorted({t for x in parts for t in x["terms"]}), "issues": [i for x in parts for i in x["issues"]]}
+
+
 def figures_dir(doc_id: str) -> Path:
     return DATA_DIR / "figures" / doc_id
 
@@ -124,12 +138,13 @@ def save_pages(doc_id: str, data: bytes, page: dict, blocks: list[dict]) -> None
     changed = [b for b in blocks if b.get("translated") not in (None, b["text"])]
     erase = [b["lines"] for b in changed if not b.get("ocr")]
     fills = [(line, b["fill"]) for b in changed if b.get("ocr") for line in b["lines"]]
+    covers = [r for b in changed for r in b.get("hl", [])]
     page["image"] = f"{n}.jpg"
-    if erase or fills:
+    if erase or fills or covers:
         page["background"] = f"{n}-bg.jpg"
     if (folder / page["image"]).exists() and ("background" not in page or (folder / page["background"]).exists()):
         return
-    original, background = render_page(data, n, erase, fills)
+    original, background = render_page(data, n, erase, fills, covers=covers)
     _write(folder / page["image"], original)
     if background is not None:
         _write(folder / page["background"], background)

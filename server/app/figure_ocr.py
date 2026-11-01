@@ -54,7 +54,9 @@ def figure_labels(data: bytes, page: int, figures: list[dict], known: list[list[
     if not rasters or os.getenv('FIGURE_OCR', '1') == '0' or _get_engine() is None:
         return []
     with _RENDER_LOCK, pymupdf.open(stream=data, filetype='pdf') as doc:
-        shots = [(clip, doc[page - 1].get_pixmap(clip=clip, dpi=DPI)) for clip in rasters]
+        area = doc[page - 1].rect
+        # 그림 가장자리에 붙은 글자가 잘리면 잘못 읽으므로 둘레를 조금 넓혀서 찍음
+        shots = [(clip, doc[page - 1].get_pixmap(clip=clip, dpi=DPI)) for clip in (r + (-8, -8, 8, 8) & area for r in rasters)]
     global _failed
     labels = []
     for clip, pix in shots:
@@ -80,4 +82,23 @@ def figure_labels(data: bytes, page: int, figures: list[dict], known: list[list[
             labels.append({'type': 'label', 'level': 0, 'text': text, 'rect': _r(rect), 'size': size, 'color': color,
                            'bold': False, 'align': 'center', 'box': _r(label_box(rect, size)), 'ocr': True,
                            'fill': fill, 'lines': [_r(rect + (-1, -1, 1, 1))]})
-    return labels
+    return _stack(labels)
+
+
+def _stack(labels: list[dict]) -> list[dict]:
+    """위아래로 붙은 가운데 정렬 두 줄("데이터 분석과" + "접근법")은 한 글로 번역. 그림이 달라도 합침"""
+    out: list[dict] = []
+    for label in sorted(labels, key=lambda x: (x['rect'][1], x['rect'][0])):
+        r = pymupdf.Rect(label['rect'])
+        if any((r & pymupdf.Rect(o['rect'])).get_area() > 0.5 * r.get_area() for o in out):
+            continue  # 겹친 그림을 따로 읽어 같은 글이 두 번 나온 경우
+        prev = next((o for o in reversed(out) if 0.7 < o['size'] / label['size'] < 1.45
+                     and -0.3 * label['size'] <= r.y0 - o['rect'][3] < 0.6 * label['size']
+                     and abs((r.x0 + r.x1) - (o['rect'][0] + o['rect'][2])) / 2 < max(r.width, o['rect'][2] - o['rect'][0]) / 2), None)
+        if prev is None:
+            out.append(dict(label))
+            continue
+        union = pymupdf.Rect(prev['rect']) | r
+        prev.update(text=f"{prev['text']} {label['text']}", rect=_r(union), lines=prev['lines'] + label['lines'],
+                    box=_r(label_box(union, prev['size'])), wrap=True)
+    return out
