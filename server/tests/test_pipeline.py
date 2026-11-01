@@ -199,3 +199,24 @@ def test_api(monkeypatch):
 def test_parentheses_with_korean_are_explanation_not_code():
     masked, saved = pr.protect("block.timestamp(블록 시간, 12초 간격)은 공개, counter.count() 호출")
     assert "블록 시간" in masked and saved == ["counter.count()"]
+
+
+def test_korean_left_in_parentheses_gets_one_more_try_without_flagging(terms):
+    class Responses:
+        def __init__(self, answers):
+            self.answers, self.calls = answers, []
+
+        def chat(self, system, user):
+            self.calls.append(user)
+            return self.answers[len(self.calls) - 1]
+
+    llm = Responses(['Ruin Risk (카리브디스) and Precision (정밀도)', 'Ruin Risk (Charybdis) and Precision'])
+    r = translate_text('파멸 위험(Ruin Risk, 카리브디스)과 정밀도(Precision)', 'en', terms, llm)
+    assert r['translated'] == 'Ruin Risk (Charybdis) and Precision' and r['issues'] == []
+    assert len(llm.calls) == 2 and '카리브디스' in llm.calls[1] and '정밀도' in llm.calls[1]
+    answer = 'If there is a gas accident in the laboratory, please call 한국가스안전공사 right away'
+    kept = Responses([answer, answer])  # 한국에만 있는 기관 이름은 남아도 됨
+    assert translate_text('실습실에서 가스 사고가 나면 한국가스안전공사에 바로 연락', 'en', terms, kept)['issues'] == []
+    done = Responses(['All translated'])
+    translate_text('모두 번역됨', 'en', terms, done)
+    assert len(done.calls) == 1
