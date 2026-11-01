@@ -1,4 +1,4 @@
-// 교안 뷰어: 페이지 목록 · 원문/번역 · 챗봇
+// 교안 뷰어: 슬라이드(원본 모양 + 번역) · 상단 페이지 막대 · 챗봇 서랍
 const DocView = (() => {
   const { h } = App;
   const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -13,49 +13,54 @@ const DocView = (() => {
     return box;
   }
 
-  // 그림: 원본 슬라이드에서 차지하던 폭 그대로. 번역본(글자를 번역해 다시 그린 그림)이 있으면 먼저 보여 주고 원본과 전환
-  function figure(doc, b, translated) {
-    const { t } = App;
-    const url = name => `${CONFIG.SERVER_URL}/documents/${doc.doc_id}/figures/${name}`;
-    const img = h('img', { class: 'fig', alt: '', loading: 'lazy', style: `width:${Math.round((b.width || 0.6) * 100)}%`,
-      src: url(translated && b.translated_image ? b.translated_image : b.image) });
-    const box = h('figure', { class: 'figure' }, img);
-    if (translated && b.translated_image) {
-      let showing = 'tr';
-      const toggle = h('button', { type: 'button', class: 'link', onclick: () => {
-        showing = showing === 'tr' ? 'or' : 'tr';
-        img.src = url(showing === 'tr' ? b.translated_image : b.image);
-        toggle.textContent = showing === 'tr' ? t.figureOriginal : t.figureTranslated;
-      } }, t.figureOriginal);
-      box.append(toggle);
+  const imageUrl = (doc, name) => `${CONFIG.SERVER_URL}/documents/${doc.doc_id}/figures/${name}`;
+
+  // 번역문이 자리(box)에 맞을 때까지 글자를 줄임 (최소 원래 크기의 45%)
+  function fit(el, size) {
+    let s = size;
+    while (s > size * 0.45 && (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1)) {
+      s *= 0.92;
+      el.style.fontSize = `${s}px`;
     }
-    if (translated && b.legend?.length) {
-      box.append(h('figcaption', { class: 'legend' }, h('strong', {}, t.figureText),
-        h('ul', {}, b.legend.map(l => h('li', {}, h('span', { lang: 'ko' }, l.source), ' → ', l.translated)))));
+  }
+
+  // 슬라이드 한 장: 원본 그림, 또는 글자를 지운 배경 + 같은 자리에 번역문. 좌표 단위는 PDF pt
+  function slide(doc, p, translated) {
+    const [w, h0] = p.size || [720, 540];
+    const inner = h('div', { class: 'slide-inner', style: `width:${w}px;height:${h0}px` });
+    const bg = translated ? p.background : p.image;
+    inner.append(h('img', { class: 'slide-bg', alt: '', src: imageUrl(doc, bg), draggable: 'false' }));
+    const boxes = [];
+    if (translated) {
+      for (const b of p.blocks) {
+        if (!b.translated || b.translated === b.text || !b.box) continue;
+        const [x0, y0, x1, y1] = b.box;
+        const el = h('div', {
+          class: `ov ${b.type}${b.align === 'center' ? ' center' : ''}${b.ocr ? ' ocr' : ''}`,
+          style: `left:${x0}px;top:${y0}px;width:${x1 - x0}px;height:${y1 - y0}px;font-size:${b.size}px;` +
+            `color:${b.color || '#000'};font-weight:${b.bold ? 700 : 400}`,
+        }, clean(b.translated));
+        inner.append(el);
+        boxes.push([el, b.size]);
+      }
     }
+    const box = h('div', { class: 'slide', 'data-w': w, 'data-h': h0 }, inner);
+    box.fitText = () => boxes.forEach(([el, size]) => fit(el, size));
     return box;
   }
 
-  // 교재 보기: 서버가 나눈 덩어리(제목·글머리표·문장·코드·그림)를 정리해서 표시.
-  // 번역이 덩어리별로 맞지 않은 페이지는 null → 페이지 전체 번역으로 대체
-  function book(doc, p, field) {
-    const blocks = p.blocks || [];
-    const words = blocks.filter(b => b.type !== 'image');
-    if (!blocks.length || (field === 'translated' && words.some(b => b.type !== 'code' && !b.translated))) return null;
-    const box = h('div', { class: 'book' });
-    for (const b of blocks) {
-      if (b.type === 'image') {
-        box.append(figure(doc, b, field === 'translated'));
-        continue;
-      }
-      const text = clean(field === 'translated' ? b.translated ?? b.text : b.text);
-      if (b.type === 'code') box.append(h('pre', { class: 'code', lang: 'en' }, b.text));
-      else {
-        const el = h(b.type === 'heading' ? 'h2' : 'div', { class: `${b.type} l${b.level || 0}` });
-        box.append(field === 'translated' ? Object.assign(el, { textContent: text }) : highlighted(text, p.terms || [], el));
-      }
-    }
-    return box;
+  const slideReady = p => p.image && p.size;
+  const overlaid = p => p.background && p.blocks?.some(b => b.translated && b.translated !== b.text);
+
+  // 글 보기: 페이지 전체 번역 | 원문 (용어 표시)
+  function textView(p) {
+    const { t } = App;
+    const empty = !(p.original || '').trim();
+    return h('div', { class: 'cols side' },
+      h('article', { class: 'col' }, h('h3', {}, t.translated),
+        empty ? h('p', { class: 'muted' }, t.noText) : Object.assign(h('div', { class: 'text' }), { textContent: clean(p.translated) })),
+      h('article', { class: 'col original', lang: 'ko' }, h('h3', {}, t.original),
+        empty ? h('p', { class: 'muted' }, t.noText) : highlighted(clean(p.original), p.terms || [])));
   }
 
   function render(doc) {
@@ -63,91 +68,71 @@ const DocView = (() => {
     const app = document.getElementById('app');
     const pages = doc.pages;
     let current = 0;
-    let mode = pages.some(p => p.blocks?.length) ? 'tr' : 'side';
+    let mode = pages.some(slideReady) ? 'tr' : 'text';
 
-    const list = h('nav', { class: 'pages', 'aria-label': t.pages },
-      pages.map((p, i) => h('button', { type: 'button', class: 'pg', 'data-i': i, onclick: () => go(i) },
-        `${t.page} ${p.page}`, p.issues?.length ? h('span', { class: 'warn-dot', title: t.issuePage }, '!') : null)));
-    const counter = h('span', { class: 'counter' });
-    const prev = h('button', { type: 'button', class: 'btn ghost', onclick: () => go(current - 1) }, `‹ ${t.prev}`);
-    const next = h('button', { type: 'button', class: 'btn ghost', onclick: () => go(current + 1) }, `${t.next} ›`);
-    const modes = [['side', t.side], ['tr', t.translated], ['or', t.original], ['pdf', t.pdfMode]].map(([k, label]) =>
+    const pick = h('select', { class: 'page-pick', 'aria-label': t.pages, onchange: e => go(Number(e.target.value)) },
+      pages.map((p, i) => h('option', { value: i }, `${t.page} ${p.page} / ${pages[pages.length - 1].page}${p.issues?.length ? '  !' : ''}`)));
+    const prev = h('button', { type: 'button', class: 'icon', title: t.prev, 'aria-label': t.prev, onclick: () => go(current - 1) }, '‹');
+    const next = h('button', { type: 'button', class: 'icon', title: t.next, 'aria-label': t.next, onclick: () => go(current + 1) }, '›');
+    const modes = [['tr', t.translated], ['or', t.original], ['side', t.side], ['text', t.textMode]].map(([k, label]) =>
       h('button', { type: 'button', 'data-m': k, onclick: () => ((mode = k), paint()) }, label));
-    const issue = h('p', { class: 'note warn', hidden: true }, t.issuePage);
-    const cols = h('div', { class: 'cols' });
-    const termBox = h('div', { class: 'terms' });
-    const pdf = { url: null, error: null, loading: false, frame: h('iframe', { class: 'pdf-frame', title: t.pdfMode }) };
+    const warn = h('span', { class: 'warn-badge', title: t.issuePage, hidden: true }, '!');
+    const review = doc.needs_review?.length ? h('span', { class: 'warn-badge soft', title: t.needsReview }, 'i') : null;
+    const stage = h('div', { class: 'stage' });
+    const chat = Chat(doc, n => goPage(n), () => toggleChat(false));
+    const chatBtn = h('button', { type: 'button', class: 'chat-toggle', 'aria-expanded': 'false', onclick: () => toggleChat() }, `💬 ${t.chatOpen}`);
 
-    // 서버가 교안마다 한 번만 만들어 둔 PDF를 받음. 만드는 중이면 5초마다 다시 확인
-    async function loadPdf() {
-      if (pdf.loading || pdf.url) return;
-      pdf.loading = true;
-      pdf.error = null;
-      let resent = false;
-      try {
-        for (;;) {
-          let res;
-          try {
-            res = await Api.layoutPdf(doc.doc_id);
-          } catch (e) {
-            // 이 기능 전에 번역한 교안은 서버에 원본이 없음 → 파일을 한 번 다시 보내 원본을 남김
-            if (e.status !== 404 || resent) throw e;
-            resent = true;
-            await App.loadDoc(() => {}, { force: true });
-            continue;
-          }
-          if (res.blob) {
-            pdf.url = URL.createObjectURL(res.blob);
-            break;
-          }
-          await new Promise(r => setTimeout(r, 5000));
-        }
-      } catch (e) {
-        pdf.error = `${t.pdfError} (${e.message})`;
-      }
-      pdf.loading = false;
-      if (mode === 'pdf') paint();
+    function toggleChat(open = !chat.classList.contains('open')) {
+      chat.classList.toggle('open', open);
+      chatBtn.setAttribute('aria-expanded', String(open));
+      chatBtn.classList.toggle('on', open);
+      if (open) chat.querySelector('textarea')?.focus();
     }
 
-    function paintPdf(p) {
-      cols.className = 'cols pdf';
-      termBox.replaceChildren();
-      issue.hidden = true;
-      if (pdf.url) {
-        const src = `${pdf.url}#page=${p.page}`;
-        if (pdf.frame.getAttribute('src') !== src) pdf.frame.src = src;
-        cols.replaceChildren(h('p', { class: 'note' }, t.pdfNote), pdf.frame);
-      } else if (pdf.error) {
-        cols.replaceChildren(h('div', { class: 'status error' }, h('p', {}, pdf.error),
-          h('button', { type: 'button', class: 'btn', onclick: () => { pdf.error = null; paint(); } }, t.retry)));
-      } else {
-        cols.replaceChildren(h('div', { class: 'status' }, h('span', { class: 'spinner' }), h('p', {}, t.pdfPreparing)));
-        loadPdf();
+    // 화면 크기에 맞춰 슬라이드 크기를 정함 (모든 페이지 같은 크기, 원본 비율 유지)
+    function layout() {
+      const slides = [...stage.querySelectorAll('.slide')];
+      if (!slides.length) return;
+      const gap = 16;
+      const cw = (stage.clientWidth - 24 - gap * (slides.length - 1)) / slides.length;
+      const ch = stage.clientHeight - 24;
+      for (const el of slides) {
+        const w = Number(el.dataset.w), hh = Number(el.dataset.h);
+        const scale = Math.max(0.1, Math.min(cw / w, ch / hh));
+        el.style.width = `${w * scale}px`;
+        el.style.height = `${hh * scale}px`;
+        el.firstChild.style.transform = `scale(${scale})`;
       }
     }
 
     function paint() {
       const p = pages[current];
-      list.querySelectorAll('.pg').forEach(b => b.classList.toggle('on', Number(b.dataset.i) === current));
-      list.querySelector('.pg.on')?.scrollIntoView({ block: 'nearest' });
+      pick.value = String(current);
       modes.forEach(b => b.classList.toggle('on', b.dataset.m === mode));
-      counter.textContent = `${p.page} / ${pages[pages.length - 1].page}`;
+      modes.forEach(b => (b.hidden = b.dataset.m !== 'text' && !slideReady(p)));
       prev.disabled = current === 0;
       next.disabled = current === pages.length - 1;
-      issue.hidden = !p.issues?.length;
-      if (mode === 'pdf') return paintPdf(p);
-      const empty = !(p.original || '').trim();
-      const figures = p.blocks?.some(b => b.type === 'image');
-      const tr = h('article', { class: 'col' }, h('h3', {}, t.translated),
-        empty && !figures ? h('p', { class: 'muted' }, t.noText)
-          : book(doc, p, 'translated') || Object.assign(h('div', { class: 'text' }), { textContent: clean(p.translated) }));
-      const or = h('article', { class: 'col original', lang: 'ko' }, h('h3', {}, t.original),
-        empty && !figures ? h('p', { class: 'muted' }, t.noText)
-          : book(doc, p, 'text') || highlighted(clean(p.original), p.terms || []));
-      cols.className = `cols ${mode}`;
-      cols.replaceChildren(...(mode === 'side' ? [tr, or] : mode === 'tr' ? [tr] : [or]));
-      termBox.replaceChildren(...(p.terms?.length ? [h('span', { class: 'muted' }, `${t.terms}:`), ...p.terms.map(x => h('span', { class: 'term' }, x))] : []));
-      cols.scrollTop = 0;
+      warn.hidden = !p.issues?.length;
+      const m = slideReady(p) ? mode : 'text';
+      stage.className = `stage ${m}`;
+      if (m === 'text') {
+        stage.replaceChildren(textView(p));
+        stage.scrollTop = 0;
+        return;
+      }
+      // 덩어리별 번역이 없는 페이지: 원본 슬라이드 + 페이지 전체 번역
+      const fallback = m !== 'or' && !overlaid(p) && (p.translated || '').trim();
+      const tr = overlaid(p) ? slide(doc, p, true) : slide(doc, p, false);
+      const or = slide(doc, p, false);
+      const shown = m === 'side' ? [tr, or] : m === 'tr' ? [tr] : [or];
+      stage.replaceChildren(h('div', { class: 'slides' }, shown),
+        fallback ? h('div', { class: 'page-text' }, h('p', { class: 'muted' }, t.pageTextNote),
+          Object.assign(h('div', { class: 'text' }), { textContent: clean(p.translated) })) : null);
+      layout();
+      shown.forEach(el => el.fitText());
+      // 다음 페이지 그림 미리 받기
+      const n = pages[current + 1];
+      if (n?.image) [n.image, n.background].filter(Boolean).forEach(x => (new Image().src = imageUrl(doc, x)));
     }
     function go(i) {
       current = Math.max(0, Math.min(pages.length - 1, i));
@@ -155,22 +140,24 @@ const DocView = (() => {
     }
     const goPage = n => go(pages.findIndex(p => p.page === n));
 
-    const reader = h('section', { class: 'reader' },
-      h('div', { class: 'toolbar' }, prev, counter, next, h('div', { class: 'seg' }, modes)),
-      doc.needs_review?.length ? h('p', { class: 'note' }, t.needsReview) : null,
-      issue, cols, termBox);
-    app.replaceChildren(h('div', { class: 'doc' }, list, reader, Chat(doc, goPage)));
+    const toolbar = h('div', { class: 'toolbar' },
+      h('nav', { class: 'crumbs' }, prev, pick, next, warn, review),
+      h('div', { class: 'seg' }, modes),
+      chatBtn);
+    app.replaceChildren(h('div', { class: 'doc' }, toolbar, h('div', { class: 'doc-body' }, stage, chat)));
+    new ResizeObserver(() => layout()).observe(stage);
     addEventListener('keydown', e => {
       if (e.target.closest('textarea, input, select')) return;
       if (e.key === 'ArrowRight') go(current + 1);
       if (e.key === 'ArrowLeft') go(current - 1);
+      if (e.key === 'Escape') toggleChat(false);
     });
     const start = pages.findIndex(p => String(p.page) === App.params.get('page'));
     go(start >= 0 ? start : 0);
   }
 
   // 대화는 교안별 저장: summary + history(서버에 보냄) + log(화면 표시용)
-  function Chat(doc, goPage) {
+  function Chat(doc, goPage, onClose) {
     const { t } = App;
     const key = `chat:${doc.doc_id}`;
     let state = { summary: null, history: [], log: [] };
@@ -236,8 +223,10 @@ const DocView = (() => {
       paint();
     });
 
+    const close = h('button', { type: 'button', class: 'icon', 'aria-label': t.close, title: t.close,
+      onclick: () => onClose() }, '×');
     return h('aside', { class: 'chat' },
-      h('div', { class: 'chat-head' }, h('strong', {}, t.chatTitle), clear),
+      h('div', { class: 'chat-head' }, h('strong', {}, t.chatTitle), h('span', { class: 'grow' }), clear, close),
       box,
       h('div', { class: 'composer' }, input, send));
   }
