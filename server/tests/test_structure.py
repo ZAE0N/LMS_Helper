@@ -186,3 +186,13 @@ def test_ocr_colors_sample_background_and_text():
     pix.set_rect(pix.irect, (200, 220, 255))
     pix.set_rect(pymupdf.IRect(20, 10, 40, 20), (10, 10, 10))
     assert figure_ocr._colors(pix, (10, 5, 50, 25)) == ('#c8dcff', '#0a0a0a')
+
+
+def test_ocr_engine_uses_supported_korean_model(monkeypatch):
+    import rapidocr
+    seen = {}
+    monkeypatch.setattr(rapidocr, 'RapidOCR', lambda params: seen.update(params) or object())
+    monkeypatch.setattr(figure_ocr, '_engine', None)
+    monkeypatch.setattr(figure_ocr, '_failed', False)
+    assert figure_ocr._get_engine() is not None
+    assert str(seen['Rec.lang_type'].value) == 'korean' and str(seen['Rec.model_type'].value) == 'mobile'

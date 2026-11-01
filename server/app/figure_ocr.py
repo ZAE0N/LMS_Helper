@@ -22,8 +22,10 @@ def _get_engine():
     global _engine, _failed
     if _engine is None and not _failed:
         try:
-            from rapidocr import LangRec, OCRVersion, RapidOCR
-            _engine = RapidOCR(params={'Rec.lang_type': LangRec.KOREAN, 'Rec.ocr_version': OCRVersion.PPOCRV5})
+            from rapidocr import LangRec, ModelType, OCRVersion, RapidOCR
+            # 한국어 인식 모델은 PP-OCRv5 mobile만 있음 (기본값 small은 지원 안 됨)
+            _engine = RapidOCR(params={'Rec.lang_type': LangRec.KOREAN, 'Rec.ocr_version': OCRVersion.PPOCRV5,
+                                       'Rec.model_type': ModelType.MOBILE})
         except Exception as e:  # 설치 안 됨 등: 그림은 원본 그대로
             _failed = True
             log.warning('그림 OCR 사용 불가: %s', type(e).__name__)

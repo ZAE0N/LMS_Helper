@@ -429,23 +429,32 @@ def render_page(data: bytes, page: int, erase: list[list[list[float]]], fills: l
             return original, None
         rects = [pymupdf.Rect(r) for lines in erase for r in lines]
         groups = [_union(lines) for lines in erase if lines]
-        shadows: dict[int, bool] = {}
-        for info in p.get_image_info(xrefs=True):
-            image = pymupdf.Rect(info['bbox'])
-            if info['xref'] <= 0:
-                continue
-            # 제목 그림자는 글자(또는 낱말)마다 따로 붙은 그림인 경우가 많음 → 블록 둘레 안에 들어가는 그림
-            shadow = image.width < p.rect.width * 0.8 and any(
-                (image & g).get_area() > 0.3 * image.get_area() and image.height < min(g.height, 60) * 3
-                and (g + (-g.height, -g.height, g.height, g.height)).contains(image) for g in groups)
-            shadows[info['xref']] = shadows.get(info['xref'], True) and shadow
+
+        def shadow_xrefs() -> list[int]:
+            verdict: dict[int, bool] = {}
+            for info in p.get_image_info(xrefs=True):
+                image = pymupdf.Rect(info['bbox'])
+                if info['xref'] <= 0 or image.is_empty:
+                    continue
+                # 제목 그림자는 글자(또는 낱말)마다 따로 붙은 그림인 경우가 많음 → 블록 둘레 안에 들어가는 그림
+                shadow = image.width < p.rect.width * 0.8 and any(
+                    (image & g).get_area() > 0.3 * image.get_area() and image.height < min(g.height, 60) * 3
+                    and (g + (-g.height, -g.height, g.height, g.height)).contains(image) for g in groups)
+                verdict[info['xref']] = verdict.get(info['xref'], True) and shadow
+            return [x for x, shadow in verdict.items() if shadow]
+
         for r in rects:  # 위아래 줄·글머리 기호를 건드리지 않게 줄 안쪽만
             p.add_redact_annot(pymupdf.Rect(r.x0 + 1, r.y0 + r.height * 0.25, r.x1 - 0.5, r.y1 - r.height * 0.25), fill=False)
         if rects:
             p.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE, graphics=pymupdf.PDF_REDACT_LINE_ART_NONE)
-        for xref, shadow in shadows.items():
-            if shadow:
+        done: set[int] = set()
+        for _ in range(4):  # 그림자가 여러 겹(그림 + 마스크)이면 지운 뒤 다시 확인
+            todo = [x for x in shadow_xrefs() if x not in done]
+            if not todo:
+                break
+            for xref in todo:
                 p.delete_image(xref)
+                done.add(xref)
         for rect, color in fills:
             p.draw_rect(pymupdf.Rect(rect), color=None, fill=tuple(int(color[i:i + 2], 16) / 255 for i in (1, 3, 5)))
         return original, p.get_pixmap(matrix=matrix).tobytes('jpeg', jpg_quality=85)
