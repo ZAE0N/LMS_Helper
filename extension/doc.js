@@ -68,8 +68,15 @@ const DocView = (() => {
     loadImage(img, imageUrl(doc, bg));
     inner.append(img);
     const boxes = [];
+    const flows = [];
     if (translated) {
+      const groups = new Map();
       for (const b of p.blocks) {
+        if (b.group != null && b.gbox && b.translated) {
+          if (!groups.has(b.group)) groups.set(b.group, []);
+          groups.get(b.group).push(b);
+          continue;
+        }
         // codetext는 번역 단위일 뿐, 화면에는 번역문을 넣어 다시 쓴 codeline으로 표시
         if (!b.translated || b.translated === b.text || !b.box || b.type === 'codetext') continue;
         const [x0, y0, x1, y1] = b.box;
@@ -81,13 +88,69 @@ const DocView = (() => {
         inner.append(el);
         boxes.push([el, b.size, b.type === 'codeline' || b.type === 'comment']);
       }
+      for (const items of groups.values()) {
+        const el = flow(items);
+        inner.append(el);
+        flows.push(el);
+      }
     }
     const box = h('div', { class: 'slide', 'data-w': w, 'data-h': h0, 'data-err': App.t.imageError }, inner);
     box.fitText = () => {
       const scale = Number(/scale\(([\d.]+)\)/.exec(inner.style.transform)?.[1]) || Number(inner.style.zoom) || 1;
       boxes.forEach(([el, size, code]) => fit(el, size, scale, code));
+      flows.forEach(el => fitFlow(el, scale));
     };
     return box;
+  }
+
+  // 목록 묶음: 묶음 자리(gbox) 안에 항목을 위에서부터 쌓고, 글머리 기호는 원래 모양·색으로 다시 그림
+  function flow(items) {
+    const [gx0, gy0, gx1, gy1] = items[0].gbox;
+    const el = h('div', { class: 'ov flow', style: `left:${gx0}px;top:${gy0}px;width:${gx1 - gx0}px;height:${gy1 - gy0}px;--h:${gy1 - gy0}px` });
+    let bottom = gy0;
+    for (const b of [...items].sort((a, c) => a.rect[1] - c.rect[1])) {
+      const [x0, y0, , y1] = b.rect;
+      const center = b.align === 'center';
+      // 기호가 둘째 줄 시작 자리에 걸치면 첫 줄은 기호 뒤에서 시작
+      const indent = b.mark && !center ? Math.max(b.indent || 0, b.mark.rect[2] - x0 + b.size * 0.3) : b.indent || 0;
+      const item = h('div', { class: `fi${center ? ' center' : ''}`, 'data-size': b.size, 'data-gap': Math.max(0, y0 - bottom),
+        'data-indent': b.mark && !center && b.mark.rect[2] <= x0 ? b.indent || 0 : indent, style: `padding-left:${center ? 0 : x0 - gx0}px;color:${b.color || '#000'};font-weight:${b.bold ? 700 : 400}` },
+      clean(b.translated));
+      if (b.mark) {
+        item.prepend(h('span', { class: 'mk', 'data-size': b.mark.size, style: `color:${b.mark.color};${center ? '' : `left:${b.mark.rect[0] - gx0}px`}` },
+          b.mark.char));
+      }
+      el.append(item);
+      bottom = y1;
+    }
+    return el;
+  }
+
+  // 묶음 전체를 같은 비율로 줄여 맞춤 (가장 작은 글이 화면 MIN_PX보다 작아지지 않게)
+  function fitFlow(el, scale) {
+    const items = [...el.children];
+    const sizes = items.map(x => Number(x.dataset.size));
+    const min = MIN_PX / scale / Math.min(...sizes);
+    const apply = f => items.forEach(x => {
+      x.style.fontSize = `${x.dataset.size * f}px`;
+      x.style.marginTop = `${x.dataset.gap * f}px`;
+      x.style.textIndent = `${x.dataset.indent * f}px`;
+      const mk = x.querySelector('.mk');
+      if (mk) mk.style.fontSize = `${mk.dataset.size * f}px`;
+    });
+    el.classList.remove('more');
+    el.removeAttribute('tabindex');
+    let f = Math.max(1, min);
+    apply(f);
+    const over = () => el.scrollHeight > el.clientHeight + 1;
+    while (over() && f > min) {
+      f = Math.max(min, f * 0.94);
+      apply(f);
+    }
+    if (over()) {
+      el.classList.add('more'); // 그래도 넘치면 묶음 안에서 자르고 마우스·Tab으로 전체 보기
+      el.tabIndex = 0;
+    }
   }
 
   const slideReady = p => p.image && p.size;
