@@ -181,7 +181,7 @@ def test_document_cache_is_invalidated_when_translation_prompt_changes(setup, mo
 
 class FakeOcr:
     """그림 왼쪽 위 (40,40)~(240,100) 픽셀에 '개인키', 영어 글자는 번역 대상 아님"""
-    def __call__(self, png):
+    def __call__(self, png, **_):
         assert png.startswith(b'\x89PNG')
         off = round((pymupdf.Pixmap(png).width - 320 * figure_ocr.DPI / 72) / 2)  # 둘레를 넓혀 찍은 그림이면 그만큼 밀림
         box = [[40 + off, 40 + off], [240 + off, 40 + off], [240 + off, 100 + off], [40 + off, 100 + off]]
@@ -414,3 +414,15 @@ def test_list_items_form_one_group_with_marks_but_cards_stay_apart():
     assert all(items[0]['mark']['rect'] in b['lines'] or b['mark']['rect'] in b['lines'] for b in items)  # 기호도 배경에서 지움
     cards = {b['group'] for b in blocks if b['text'].startswith('카드')}
     assert len(cards) == 2
+
+
+def test_small_word_pictures_side_by_side_are_read_as_one_line():
+    doc = pymupdf.open()
+    page = doc.new_page(width=600, height=400)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 80, 40), False)
+    pix.set_rect(pix.irect, (255, 255, 255))
+    for x0 in (100, 170, 240):  # "강의" "계획" "안내" 처럼 낱말마다 따로 붙인 그림 (조금씩 겹침)
+        page.insert_image(pymupdf.Rect(x0, 200, x0 + 80, 238), pixmap=pix)
+    page.insert_image(pymupdf.Rect(100, 300, 180, 338), pixmap=pix)  # 다른 줄
+    lines = figure_ocr._strips(page, [pymupdf.Rect(50, 150, 500, 360)])
+    assert sorted((round(r.x0 / 10), round(r.x1 / 10), round(r.y0 / 10)) for r in lines) == [(10, 18, 30), (10, 32, 20)]

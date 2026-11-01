@@ -61,13 +61,14 @@ def figure_labels(data: bytes, page: int, figures: list[dict], known: list[list[
         # 그림만 찍은 것과 둘레를 조금 넓혀 찍은 것(가장자리에 붙은 글자) 둘 다 읽고, 겹치면 점수가 높은 쪽
         clips = rasters + [r + (-8, -8, 8, 8) & area for r in rasters]
         shots = [(clip, doc[page - 1].get_pixmap(clip=clip, dpi=DPI)) for clip in clips]
+        strips = [(r, doc[page - 1].get_pixmap(clip=r, dpi=DPI)) for r in _strips(doc[page - 1], rasters)]
         whole = doc[page - 1].get_pixmap(dpi=SCAN_DPI)  # 번역문 자리(칸) 찾기용
     global _failed
     labels = []
     for clip, pix in shots:
         try:
             with _lock:
-                out = _engine(pix.tobytes('png'))
+                out = _engine(pix.tobytes('png'), use_det=True, use_cls=True, use_rec=True)  # 아래 낱말 읽기가 설정을 바꿔 두므로 매번 지정
         except Exception as e:  # 모델을 받지 못한 경우 등
             _failed = True
             log.warning('그림 OCR 실패: %s', type(e).__name__)
@@ -87,6 +88,23 @@ def figure_labels(data: bytes, page: int, figures: list[dict], known: list[list[
             labels.append({'type': 'label', 'level': 0, 'text': text, 'rect': _r(rect), 'size': size, 'color': color,
                            'bold': False, 'align': 'center', 'box': _r(label_box(rect, size)), 'ocr': True,
                            'fill': fill, 'lines': [_r(rect + (-1, -1, 1, 1))], 'score': score})
+    # 낱말마다 따로 붙인 작은 글자 그림("강의" "계획" "안내"): 위치 찾기 없이 한 줄로 바로 읽음
+    for rect, pix in strips:
+        try:
+            with _lock:
+                out = _engine(pix.tobytes('png'), use_det=False, use_cls=False, use_rec=True)
+        except Exception:
+            continue
+        for text, score in zip(out.txts or [], out.scores or []):
+            text = str(text).strip()
+            if score < 0.8 or not HANGUL.search(text) or GARBLED.search(text) or \
+                    any((rect & pymupdf.Rect(k)).get_area() > 0.5 * rect.get_area() for k in known):
+                continue
+            fill, color = _colors(pix, (0, 0, pix.width - 1, pix.height - 1))
+            size = round(rect.height * 0.62, 1)
+            labels.append({'type': 'label', 'level': 0, 'text': text, 'rect': _r(rect), 'size': size, 'color': color,
+                           'bold': False, 'align': 'center', 'box': _r(label_box(rect, size)), 'ocr': True,
+                           'fill': fill, 'lines': [_r(rect)], 'score': score + 0.05})  # 겹치면 이쪽을 남김
     labels.sort(key=lambda x: -x['score'])
     out = [{k: v for k, v in x.items() if k != 'score'} for x in _stack(labels)]
     for label in out:
@@ -131,6 +149,24 @@ def _room(pix: pymupdf.Pixmap, r: pymupdf.Rect, frame: pymupdf.Rect, fill: str, 
     while y1 + step < min(frame.y1, r.y1 + h * 1.5) and row(y1 + step, r.x0, r.x1) and not blocked(pymupdf.Rect(r.x0, y1, r.x1, y1 + step + 2)):
         y1 += step
     return pymupdf.Rect(x0 + 1, y0 + 1, x1 - 1, y1 - 1) | r
+
+
+def _strips(page: pymupdf.Page, rasters: list[pymupdf.Rect]) -> list[pymupdf.Rect]:
+    """그림 영역 안에서 가로로 이어 붙은 낮고 긴 작은 그림들(낱말 그림)을 한 줄로 묶음"""
+    words = []
+    for info in page.get_image_info():
+        r = pymupdf.Rect(info['bbox'])
+        if 12 <= r.height <= 60 and r.width >= r.height * 1.2 and r.width < 400 and any((f + (-4, -4, 4, 4)).contains(r) for f in rasters):
+            words.append(r)
+    lines: list[pymupdf.Rect] = []
+    for r in sorted(words, key=lambda x: (round(x.y0 / 4), x.x0)):
+        k = next((i for i, x in enumerate(lines) if abs(x.y0 - r.y0) < 3 and abs(x.y1 - r.y1) < 3
+                  and max(r.x0 - x.x1, x.x0 - r.x1) < r.height * 0.6), None)
+        if k is None:
+            lines.append(pymupdf.Rect(r))
+        else:
+            lines[k] = lines[k] | r
+    return lines
 
 
 def _stack(labels: list[dict]) -> list[dict]:
