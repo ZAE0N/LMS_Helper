@@ -51,7 +51,6 @@
 /* 공통 */
 .lmsh-ui .lmsh-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .lmsh-ui .lmsh-seg { display: flex; gap: 4px; }
-.lmsh-ui .lmsh-seg.lmsh-wrap { flex-wrap: wrap; margin-bottom: 10px; }
 .lmsh-ui .lmsh-seg button { border: 1px solid var(--lmsh-line); background: #fff; border-radius: 999px; padding: 4px 14px; cursor: pointer; color: var(--lmsh-text); font-weight: 600; }
 .lmsh-ui .lmsh-seg button:hover { border-color: var(--lmsh-accent); }
 .lmsh-ui .lmsh-seg button.on { background: var(--lmsh-text); border-color: var(--lmsh-text); color: #fff; }
@@ -118,3 +117,4 @@
 .lmsh-ui .lmsh-chip.on { border-color: var(--lmsh-accent); color: #fff; background: var(--lmsh-accent); }
 .lmsh-ui .lmsh-range { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
 .lmsh-ui .lmsh-num { width: 72px; border: 1px solid var(--lmsh-line-strong); border-radius: 8px; padding: 4px 8px; height: auto; }
+.lmsh-ui .lmsh-filter { min-width: 140px; max-width: 260px; padding: 5px 8px; font-weight: 600; }

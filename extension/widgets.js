@@ -5,7 +5,8 @@
   const KO = {
     brand: 'LMS Helper',
     tabs: { notices: '알림', materials: '교안', review: '복습' },
-    all: '전체',
+    allCourses: '전체 과목',
+    allCategories: '전체 분류',
     pager: '쪽 이동',
     prev: '이전 쪽',
     next: '다음 쪽',
@@ -155,7 +156,7 @@
     const list = h('div', { class: 'lmsh-list' });
     const status = h('p', { class: 'lmsh-status' });
     const pager = h('nav', { class: 'lmsh-pager', 'aria-label': KO.pager });
-    const filters = h('div', { class: 'lmsh-filters' });
+    const filters = h('span', { class: 'lmsh-filters' });
     const seg = Object.entries(KO.sources).map(([key, label]) =>
       h('button', { type: 'button', 'data-s': key, onclick: () => {
         Object.assign(state, { source: key, course: null, category: null });
@@ -174,18 +175,21 @@
           n.posted_at ? h('span', { class: 'lmsh-date' }, fmtDate(n.posted_at)) : null));
     };
 
-    // 수업: 과목별 버튼 / 학교: 분류 버튼 (서버가 categories를 주면)
-    function chips(options, current, pick) {
-      return h('div', { class: 'lmsh-seg lmsh-wrap' },
-        [[null, KO.all], ...options].map(([value, label]) =>
-          h('button', { type: 'button', class: value === current ? 'on' : '', onclick: () => pick(value) }, label)));
+    // 세부 분류는 드롭다운: 수업 = 과목, 학교·학과 = 분류 (서버가 categories를 주면)
+    function dropdown(allLabel, options, current, pick) {
+      const sel = h('select', { class: 'lmsh-select-sm lmsh-filter', onchange: e => pick(e.target.value || null) },
+        [['', allLabel], ...options].map(([value, label]) => h('option', { value }, label)));
+      sel.value = current ?? '';
+      return sel;
     }
     async function paintFilters(res) {
       if (state.source === 'course') {
         const cs = await getCourses().catch(() => []);
-        filters.replaceChildren(chips(cs.map(c => [c.id, c.name]), state.course, v => { state.course = v; load(1, true); }));
+        filters.replaceChildren(dropdown(KO.allCourses, cs.map(c => [String(c.id), c.name]), state.course,
+          v => { state.course = v; load(1, true); }));
       } else if (res?.categories?.length) {
-        filters.replaceChildren(chips(res.categories.map(c => [c, c]), state.category, v => { state.category = v; load(1, true); }));
+        filters.replaceChildren(dropdown(KO.allCategories, res.categories.map(c => [c, c]), state.category,
+          v => { state.category = v; load(1, true); }));
       } else filters.replaceChildren();
     }
 
@@ -253,9 +257,9 @@
     }
 
     const el = h('div', { class: 'lmsh-tab' },
-      h('div', { class: 'lmsh-toolbar' }, h('div', { class: 'lmsh-seg' }, seg),
+      h('div', { class: 'lmsh-toolbar' }, h('div', { class: 'lmsh-seg' }, seg), filters,
         CONFIG.MOCK_API.notices ? h('span', { class: 'lmsh-sample' }, KO.sample) : null),
-      filters, list, status, pager);
+      list, status, pager);
     return { el, start: () => load(1, true) };
   }
 
