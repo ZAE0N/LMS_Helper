@@ -47,7 +47,8 @@ const DocView = (() => {
     const boxes = [];
     if (translated) {
       for (const b of p.blocks) {
-        if (!b.translated || b.translated === b.text || !b.box) continue;
+        // codetext는 번역 단위일 뿐, 화면에는 번역문을 넣어 다시 쓴 codeline으로 표시
+        if (!b.translated || b.translated === b.text || !b.box || b.type === 'codetext') continue;
         const [x0, y0, x1, y1] = b.box;
         const el = h('div', {
           class: `ov ${b.type} ${b.align || 'left'}${b.type === 'label' && !b.wrap ? ' nowrap' : ''}${b.ocr ? ' ocr' : ''}`,

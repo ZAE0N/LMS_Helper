@@ -82,9 +82,9 @@ main { flex: 1; min-height: 0; }
 .ov.squeeze { overflow-wrap: anywhere; }
 .ov.label, .ov.center { display: flex; align-items: center; }
 .ov.center { justify-content: center; text-align: center; }
-.ov.heading.center { align-items: flex-start; }
+.ov.center:not(.label) { align-items: flex-start; }
 .ov.nowrap, .ov.ocr { white-space: nowrap; }
-.ov.comment { line-height: 1.05; white-space: nowrap; font-family: Consolas, "D2Coding", monospace; }
+.ov.comment, .ov.codeline { display: flex; align-items: center; line-height: 1.05; white-space: pre; font-family: Consolas, "D2Coding", monospace; }
 .page-text { max-width: 900px; margin: 0 auto 16px; padding: 12px 16px; background: #fff; border: 1px solid var(--line); border-radius: 12px; display: flex; flex-direction: column; gap: 6px; }
 .stage.text { padding: 14px 18px; }
 .cols { display: grid; gap: 14px; }
