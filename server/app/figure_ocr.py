@@ -16,6 +16,7 @@ DPI = 300  # 화면 캡처 속 작은 글자도 읽도록 크게
 SCAN_DPI = 100
 MIN_SCORE = 0.5
 GARBLED = re.compile(r'[\u3131-\u318e|{}\[\]<>]')  # 낱자모·기호가 섞이면 잘못 읽은 것
+END = re.compile(r'[.!?]["”’\']?$')  # 문장 끝: 아래 줄과 합치지 않음
 _lock = Lock()
 _engine = None
 _failed = False
@@ -68,7 +69,9 @@ def figure_labels(data: bytes, page: int, figures: list[dict], known: list[list[
     for clip, pix in shots:
         try:
             with _lock:
-                out = _engine(pix.tobytes('png'), use_det=True, use_cls=True, use_rec=True)  # 아래 낱말 읽기가 설정을 바꿔 두므로 매번 지정
+                # 방향 판별(cls)은 바른 줄을 거꾸로 보고 뒤집어 읽는 일이 많아 끔 (슬라이드 그림은 거꾸로 붙지 않음).
+                # 아래 낱말 읽기가 설정을 바꿔 두므로 매번 지정
+                out = _engine(pix.tobytes('png'), use_det=True, use_cls=False, use_rec=True)
         except Exception as e:  # 모델을 받지 못한 경우 등
             _failed = True
             log.warning('그림 OCR 실패: %s', type(e).__name__)
@@ -85,9 +88,11 @@ def figure_labels(data: bytes, page: int, figures: list[dict], known: list[list[
                 continue
             fill, color = _colors(pix, px)
             size = round(rect.height * 0.72, 1)
+            left, right = _edges(pix, px, fill)
+            cover = pymupdf.Rect(clip.x0 + left * scale, rect.y0 - 1, clip.x0 + right * scale, rect.y1 + 1) | rect + (-1, -1, 1, 1)
             labels.append({'type': 'label', 'level': 0, 'text': text, 'rect': _r(rect), 'size': size, 'color': color,
                            'bold': False, 'align': 'center', 'box': _r(label_box(rect, size)), 'ocr': True,
-                           'fill': fill, 'lines': [_r(rect + (-1, -1, 1, 1))], 'score': score})
+                           'fill': fill, 'lines': [_r(cover)], 'score': score})
     # 낱말마다 따로 붙인 작은 글자 그림("강의" "계획" "안내"): 위치 찾기 없이 한 줄로 바로 읽음
     for rect, pix in strips:
         try:
@@ -110,9 +115,35 @@ def figure_labels(data: bytes, page: int, figures: list[dict], known: list[list[
     for label in out:
         frame = next((r + (-8, -8, 8, 8) for r in rasters if (r + (-8, -8, 8, 8)).contains(pymupdf.Rect(label['rect']))), None)
         if frame is not None:
-            label['box'] = _r(_room(whole, pymupdf.Rect(label['rect']), frame, label['fill'], [pymupdf.Rect(o['rect']) for o in out if o is not label]))
+            start = pymupdf.Rect(label['rect'])
+            for line in label['lines']:  # 지운 자리(따옴표 등 포함)부터 넓힘
+                start |= pymupdf.Rect(line) + (1, 1, -1, -1)
+            label['box'] = _r(_room(whole, start, frame, label['fill'], [pymupdf.Rect(o['rect']) for o in out if o is not label]))
             label['wrap'] = True
     return out
+
+
+def _edges(pix: pymupdf.Pixmap, px: tuple[int, int, int, int], fill: str) -> tuple[int, int]:
+    """OCR 상자 밖에 붙은 따옴표 등 작은 표시까지 지우도록 좌우로 넓힌 범위(픽셀).
+    글자 높이의 35%까지, 세로선·다른 글자처럼 줄 높이 절반 넘게 칠해진 세로줄을 만나면 멈춤"""
+    x0, y0, x1, y1 = px
+    bg = [int(fill[i:i + 2], 16) for i in (1, 3, 5)]
+    data, w, n = pix.samples, pix.width, pix.n
+    ys = range(max(0, y0), min(pix.height, y1 + 1))
+
+    def light(x: int) -> bool:
+        ink = sum(sum((data[(y * w + x) * n + c] - bg[c]) ** 2 for c in range(3)) >= 400 for y in ys)  # 연한 칸선도 잡음
+        return ink <= 0.5 * len(ys)
+
+    reach = int((y1 - y0) * 0.35)
+    lo, hi = max(0, x0 - reach), min(w - 1, x1 + reach)
+    left, right = x0, x1
+    while left > lo and light(left - 1):
+        left -= 1
+    while right < hi and light(right + 1):
+        right += 1
+    # 선을 만나 멈췄으면 번진 가장자리까지 지우지 않도록 조금 띄움
+    return min(x0, left + 3) if left > lo else left, max(x1, right - 3) if right < hi else right
 
 
 def _room(pix: pymupdf.Pixmap, r: pymupdf.Rect, frame: pymupdf.Rect, fill: str, others: list[pymupdf.Rect]) -> pymupdf.Rect:
@@ -170,7 +201,8 @@ def _strips(page: pymupdf.Page, rasters: list[pymupdf.Rect]) -> list[pymupdf.Rec
 
 
 def _stack(labels: list[dict]) -> list[dict]:
-    """위아래로 붙은 가운데 정렬 두 줄("데이터 분석과" + "접근법")은 한 글로 번역. 그림이 달라도 합침"""
+    """위아래로 붙은 가운데 정렬 두 줄("데이터 분석과" + "접근법")은 한 글로 번역. 그림이 달라도 합침.
+    윗줄이 문장으로 끝나면(따옴표로 묶인 예문 여러 줄 등) 줄마다 따로"""
     kept: list[dict] = []
     for label in labels:  # 앞에 있는 것(점수가 높은 것)을 남김
         r = pymupdf.Rect(label['rect'])
@@ -179,7 +211,7 @@ def _stack(labels: list[dict]) -> list[dict]:
     out: list[dict] = []
     for label in sorted(kept, key=lambda x: (x['rect'][1], x['rect'][0])):
         r = pymupdf.Rect(label['rect'])
-        prev = next((o for o in reversed(out) if 0.7 < o['size'] / label['size'] < 1.45
+        prev = next((o for o in reversed(out) if 0.7 < o['size'] / label['size'] < 1.45 and not END.search(o['text'])
                      and -0.3 * label['size'] <= r.y0 - o['rect'][3] < 0.6 * label['size']
                      and abs((r.x0 + r.x1) - (o['rect'][0] + o['rect'][2])) / 2 < max(r.width, o['rect'][2] - o['rect'][0]) / 2), None)
         if prev is None:

@@ -384,6 +384,40 @@ def test_ocr_two_line_titles_are_joined_even_from_different_images():
     assert joined['rect'] == [600, 462, 790, 547] and len(joined['lines']) == 2 and joined['wrap']
 
 
+def test_ocr_quoted_sentences_stay_on_their_own_lines():
+    def label(text, rect):
+        return {'type': 'label', 'text': text, 'rect': rect, 'size': 19.5, 'lines': [rect], 'box': rect, 'ocr': True, 'fill': '#ffffff'}
+    out = figure_ocr._stack([label('“학생들의 평균 몸무게는 61.5kg이다.”', [557, 515, 878, 543]),
+                             label('“비만인 학생은 전체의 13%다.', [585, 551, 845, 579])])
+    assert len(out) == 2
+
+
+def test_ocr_reads_without_orientation_check(monkeypatch):
+    calls = []
+
+    class Spy(FakeOcr):
+        def __call__(self, png, **kw):
+            calls.append(kw)
+            return super().__call__(png)
+    monkeypatch.setenv('FIGURE_OCR', '1')
+    monkeypatch.setattr(figure_ocr, '_engine', Spy())
+    figure_ocr.figure_labels(photo_pdf(), 1, [{'rect': [200, 150, 520, 350], 'raster': True}], [])
+    det = [c for c in calls if c.get('use_det')]
+    assert det and all(c['use_cls'] is False for c in det)  # 방향 판별이 바른 줄을 뒤집어 읽음
+
+
+def test_ocr_cover_takes_quote_marks_but_not_cell_lines():
+    doc = pymupdf.open()
+    page = doc.new_page(width=400, height=100)
+    page.draw_rect(pymupdf.Rect(102, 42, 198, 58), color=None, fill=(0, 0, 0))  # 글자 (OCR 상자는 조금 더 큼)
+    page.draw_rect(pymupdf.Rect(94, 40, 97, 44), color=None, fill=(0, 0, 0))  # 상자 밖 따옴표
+    page.draw_line((205, 20), (205, 80), color=(0.85, 0.85, 0.85), width=0.5)  # 연한 칸선
+    pix = page.get_pixmap(dpi=figure_ocr.DPI)
+    k = figure_ocr.DPI / 72
+    left, right = figure_ocr._edges(pix, (round(100 * k), round(40 * k), round(200 * k), round(60 * k)), '#ffffff')
+    assert left / k < 94 and right / k < 205
+
+
 def test_ocr_label_room_grows_to_the_table_cell_in_the_picture():
     doc = pymupdf.open()
     page = doc.new_page(width=600, height=300)
