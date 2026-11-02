@@ -173,7 +173,7 @@ def _room(pix: pymupdf.Pixmap, r: pymupdf.Rect, frame: pymupdf.Rect, fill: str, 
 
     def plain(x: int, y: int) -> bool:
         i = (y * w + x) * n
-        return sum((data[i + c] - bg[c]) ** 2 for c in range(3)) < 400  # 연한 칸선(바탕과 17~23 차이)도 선으로
+        return sum((data[i + c] - bg[c]) ** 2 for c in range(3)) < 900  # 연한 칸선(바탕과 17~23 차이)도 선으로, 바탕 잡음(3 이하)은 바탕으로
 
     def column(x: float, y0: float, y1: float) -> bool:
         ys = range(int(y0 * k), max(int(y0 * k) + 1, int(y1 * k)))
