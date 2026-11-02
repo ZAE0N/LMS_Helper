@@ -406,6 +406,33 @@ def test_ocr_reads_without_orientation_check(monkeypatch):
     assert det and all(c['use_cls'] is False for c in det)  # 방향 판별이 바른 줄을 뒤집어 읽음
 
 
+def test_ocr_long_thin_pictures_are_not_blown_up(monkeypatch):
+    det = SimpleNamespace(limit_side_len=736)
+    monkeypatch.setattr(figure_ocr, '_engine', SimpleNamespace(text_det=det, max_side_len=2000))
+    figure_ocr._limit((800, 600))  # 보통 그림: 엔진 기본값 그대로
+    assert det.limit_side_len == 736
+    figure_ocr._limit((46, 1487))  # 폭 11pt 세로 띠: 그대로면 736 x 23,800px
+    assert det.limit_side_len < 736 and 1487 * det.limit_side_len / 46 <= figure_ocr.CAP
+    figure_ocr._limit(None)
+    assert det.limit_side_len == 736
+
+
+def test_ocr_results_are_reused_for_the_same_picture(monkeypatch, tmp_path):
+    calls = []
+
+    class Counting(FakeOcr):
+        def __call__(self, png, **kw):
+            calls.append(kw)
+            return super().__call__(png)
+    monkeypatch.setenv('FIGURE_OCR', '1')
+    monkeypatch.setattr(figure_ocr, '_engine', Counting())
+    figs = [{'rect': [200, 150, 520, 350], 'raster': True}]
+    first = figure_ocr.figure_labels(photo_pdf(), 1, figs, [], tmp_path)
+    n = len(calls)
+    again = figure_ocr.figure_labels(photo_pdf(), 1, figs, [], tmp_path)
+    assert n > 0 and len(calls) == n and again == first  # 두 번째는 저장된 결과만 씀
+
+
 def test_ocr_cover_takes_quote_marks_but_not_cell_lines():
     doc = pymupdf.open()
     page = doc.new_page(width=400, height=100)

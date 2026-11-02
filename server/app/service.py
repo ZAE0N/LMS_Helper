@@ -56,7 +56,8 @@ def translate_pdf(data: bytes, lang: str, course: str | None, llm: LLM, *, worke
             page["blocks"] = blocks
             return page
         # 통째로 붙인 그림 속 한글(OCR)도 같은 자리에 번역
-        blocks += figure_labels(data, p["page"], p.get("figures") or [], [b["rect"] for b in blocks if b["type"] == "label"])
+        blocks += figure_labels(data, p["page"], p.get("figures") or [], [b["rect"] for b in blocks if b["type"] == "label"],
+                                DATA_DIR / "ocr")
         source = marked_text(blocks) or p["text"]
         k = Cache.key(source, lang, gver, PROMPT_VERSION)
         with _PAGE_LOCKS[int(k[:8], 16) % len(_PAGE_LOCKS)]:

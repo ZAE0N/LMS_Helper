@@ -1,11 +1,15 @@
 """통째로 붙인 그림(사진·캡처) 속 한글을 OCR로 찾아 위치·색과 함께 돌려줌.
 배경에서는 글자 둘레 색으로 덮고, 확장이 같은 자리에 번역문을 올린다.
 RapidOCR(Apache-2.0) 한국어 모델은 처음 실행할 때 한 번 내려받음. FIGURE_OCR=0이면 끔"""
+import hashlib
+import json
 import logging
 import os
 import re
 import statistics
+from pathlib import Path
 from threading import Lock
+from types import SimpleNamespace
 
 import pymupdf
 
@@ -17,6 +21,10 @@ SCAN_DPI = 100
 MIN_SCORE = 0.5
 GARBLED = re.compile(r'[\u3131-\u318e|{}\[\]<>]')  # 낱자모·기호가 섞이면 잘못 읽은 것
 END = re.compile(r'[.!?]["”’\']?$')  # 문장 끝: 아래 줄과 합치지 않음
+# 글자 찾기는 작은 변을 736px까지 키우는데, 가는 띠 그림은 긴 변이 수만 px가 되어 한 장에 10초 넘게 걸림.
+# 키운 긴 변이 이 값을 넘을 때만 덜 키움 (교안 6개에서 인식 결과가 지금과 같은 값)
+CAP = 6000
+OCR_KEY = 'ko-v5m-nocls-cap6000'  # 엔진·설정을 바꾸면 바꿈 (저장된 OCR 결과를 다시 만듦)
 _lock = Lock()
 _engine = None
 _failed = False
@@ -30,10 +38,60 @@ def _get_engine():
             # 한국어 인식 모델은 PP-OCRv5 mobile만 있음 (기본값 small은 지원 안 됨)
             _engine = RapidOCR(params={'Rec.lang_type': LangRec.KOREAN, 'Rec.ocr_version': OCRVersion.PPOCRV5,
                                        'Rec.model_type': ModelType.MOBILE})
+            blank = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 64, 32), False)
+            blank.set_rect(blank.irect, (255, 255, 255))
+            _engine(blank.tobytes('png'), use_det=True, use_cls=False, use_rec=True)  # 모델을 미리 올려 둠 (글자 찾기 설정용)
         except Exception as e:  # 설치 안 됨 등: 그림은 원본 그대로
             _failed = True
             log.warning('그림 OCR 사용 불가: %s', type(e).__name__)
     return _engine
+
+
+def _limit(size: tuple[int, int] | None) -> None:
+    """글자 찾기 확대 기준: 보통은 엔진 기본값, 아주 길쭉한 그림만 키운 긴 변이 CAP을 넘지 않게"""
+    det = getattr(_engine, 'text_det', None)
+    if det is None:
+        return
+    if not hasattr(det, 'base_side'):
+        det.base_side = det.limit_side_len
+    det.limit_side_len = det.base_side
+    if size is None:
+        return
+    w, h = size
+    shrink = min(1, getattr(_engine, 'max_side_len', 2000) / max(w, h))  # 엔진이 먼저 긴 변을 줄임
+    short, long = min(w, h) * shrink, max(w, h) * shrink
+    if short < det.base_side and long * det.base_side / short > CAP:
+        det.limit_side_len = max(32, int(CAP * short / long))
+
+
+def _read(png: bytes, size: tuple[int, int], det: bool, cache: Path | None) -> SimpleNamespace:
+    """OCR 한 번. 같은 그림(같은 픽셀)은 결과가 같으므로 저장해 두고 다시 쓰지 않음 (반복 쪽, 다른 언어로 열 때)"""
+    key = hashlib.sha1(png + f'|{det}|{OCR_KEY}'.encode()).hexdigest()
+    path = cache / key[:2] / f'{key}.json' if cache else None
+    if path is not None and path.exists():
+        try:
+            return SimpleNamespace(**json.loads(path.read_text(encoding='utf-8')))
+        except (OSError, ValueError):
+            pass
+    with _lock:
+        if det:
+            _limit(size)
+        try:
+            # 방향 판별(cls)은 바른 줄을 거꾸로 보고 뒤집어 읽는 일이 많아 끔 (슬라이드 그림은 거꾸로 붙지 않음).
+            # 낱말 읽기(det 없음)가 엔진 설정을 바꿔 두므로 매번 지정
+            out = _engine(png, use_det=det, use_cls=False, use_rec=True)
+        finally:
+            if det:
+                _limit(None)
+    boxes = getattr(out, 'boxes', None)
+    res = {'boxes': None if boxes is None else [[[float(v) for v in p] for p in b] for b in boxes],
+           'txts': [str(t) for t in out.txts or []], 'scores': [float(x) for x in out.scores or []]}
+    if path is not None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(f'.{os.getpid()}.tmp')
+        tmp.write_text(json.dumps(res), encoding='utf-8')
+        os.replace(tmp, path)
+    return SimpleNamespace(**res)
 
 
 def _hex(rgb) -> str:
@@ -52,8 +110,8 @@ def _colors(pix: pymupdf.Pixmap, box: tuple[int, int, int, int]) -> tuple[str, s
     return _hex(bg), _hex(fg)
 
 
-def figure_labels(data: bytes, page: int, figures: list[dict], known: list[list[float]]) -> list[dict]:
-    """raster 그림마다 한글 글자를 찾아 label 블록으로. known: 이미 PDF 글자로 있는 위치(겹치면 제외)"""
+def figure_labels(data: bytes, page: int, figures: list[dict], known: list[list[float]], cache: Path | None = None) -> list[dict]:
+    """raster 그림마다 한글 글자를 찾아 label 블록으로. known: 이미 PDF 글자로 있는 위치(겹치면 제외), cache: OCR 결과 저장 폴더"""
     rasters = [pymupdf.Rect(f['rect']) for f in figures if f.get('raster')]
     if not rasters or os.getenv('FIGURE_OCR', '1') == '0' or _get_engine() is None:
         return []
@@ -68,10 +126,7 @@ def figure_labels(data: bytes, page: int, figures: list[dict], known: list[list[
     labels = []
     for clip, pix in shots:
         try:
-            with _lock:
-                # 방향 판별(cls)은 바른 줄을 거꾸로 보고 뒤집어 읽는 일이 많아 끔 (슬라이드 그림은 거꾸로 붙지 않음).
-                # 아래 낱말 읽기가 설정을 바꿔 두므로 매번 지정
-                out = _engine(pix.tobytes('png'), use_det=True, use_cls=False, use_rec=True)
+            out = _read(pix.tobytes('png'), (pix.width, pix.height), True, cache)
         except Exception as e:  # 모델을 받지 못한 경우 등
             _failed = True
             log.warning('그림 OCR 실패: %s', type(e).__name__)
@@ -96,8 +151,7 @@ def figure_labels(data: bytes, page: int, figures: list[dict], known: list[list[
     # 낱말마다 따로 붙인 작은 글자 그림("강의" "계획" "안내"): 위치 찾기 없이 한 줄로 바로 읽음
     for rect, pix in strips:
         try:
-            with _lock:
-                out = _engine(pix.tobytes('png'), use_det=False, use_cls=False, use_rec=True)
+            out = _read(pix.tobytes('png'), (pix.width, pix.height), False, cache)
         except Exception:
             continue
         for text, score in zip(out.txts or [], out.scores or []):
