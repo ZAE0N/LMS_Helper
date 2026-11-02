@@ -91,7 +91,7 @@ const App = (() => {
     const { t, lang } = App;
     const course = params.get('course');
     const file = params.get('file');
-    const key = `doc:v12:${file}:${lang}`; // 교재 보기 형식이 바뀌면 올려서 다시 번역
+    const key = `doc:v13:${file}:${lang}`; // 교재 보기 형식이 바뀌면 올려서 다시 번역
     onStep(t.step.meta);
     const meta = await fileMeta(course, file).catch(() => { throw new UserError(t.errDownload); });
     const saved = (await store.get(key))[key];

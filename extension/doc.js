@@ -105,7 +105,7 @@ const DocView = (() => {
 
   // 목록 묶음: 묶음 자리(gbox) 안에 항목을 위에서부터 쌓고, 글머리 기호는 원래 모양·색으로 다시 그림
   function flow(items) {
-    const [gx0, gy0, gx1, gy1] = items[0].gbox;
+    const [gx0, gy0, gx1, gy1] = items[0].gbox; // 항목마다 자기 자리(box) 오른쪽 끝까지만 (옆 표·그림을 덮지 않게)
     const el = h('div', { class: 'ov flow', style: `left:${gx0}px;top:${gy0}px;width:${gx1 - gx0}px;height:${gy1 - gy0}px;--h:${gy1 - gy0}px` });
     let bottom = gy0;
     for (const b of [...items].sort((a, c) => a.rect[1] - c.rect[1])) {
@@ -114,7 +114,8 @@ const DocView = (() => {
       // 기호가 둘째 줄 시작 자리에 걸치면 첫 줄은 기호 뒤에서 시작
       const indent = b.mark && !center ? Math.max(b.indent || 0, b.mark.rect[2] - x0 + b.size * 0.3) : b.indent || 0;
       const item = h('div', { class: `fi${center ? ' center' : ''}`, 'data-size': b.size, 'data-gap': Math.max(0, y0 - bottom),
-        'data-indent': b.mark && !center && b.mark.rect[2] <= x0 ? b.indent || 0 : indent, style: `padding-left:${center ? 0 : x0 - gx0}px;color:${b.color || '#000'};font-weight:${b.bold ? 700 : 400}` },
+        'data-indent': b.mark && !center && b.mark.rect[2] <= x0 ? b.indent || 0 : indent, style: `padding-left:${center ? 0 : x0 - gx0}px;padding-right:${center ? 0 : Math.max(0, gx1 - (b.box?.[2] ?? gx1))}px;` +
+          `color:${b.color || '#000'};font-weight:${b.bold ? 700 : 400}` },
       clean(b.translated));
       if (b.mark) {
         item.prepend(h('span', { class: 'mk', 'data-size': b.mark.size, style: `color:${b.mark.color};${center ? '' : `left:${b.mark.rect[0] - gx0}px`}` },
