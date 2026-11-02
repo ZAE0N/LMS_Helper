@@ -220,3 +220,20 @@ def test_korean_left_in_parentheses_gets_one_more_try_without_flagging(terms):
     done = Responses(['All translated'])
     translate_text('모두 번역됨', 'en', terms, done)
     assert len(done.calls) == 1
+
+
+def test_prompt_shows_korean_in_parentheses_after_english_is_translated_too(terms):
+    seen = []
+
+    class Capture:
+        def chat(self, system, user):
+            seen.append((system, user))
+            return 'Precision (точность) и Recall (полнота)' if len(seen) > 1 else 'Precision (정밀도) и Recall (재현율)'
+
+    r = translate_text('Precision(정밀도)과 Recall(재현율)', 'ru', terms, Capture())
+    system, retry = seen[0][0], seen[1][1]
+    assert 'Precision(정밀도) → Precision (точность)' in system and '정밀도(Precision) → точность (Precision)' in system
+    assert 'inside parentheses or next to English' in retry and '정밀도' in retry
+    assert r['translated'] == 'Precision (точность) и Recall (полнота)'
+    assert 'Precision(정밀도) → Precision' in translate_text.__globals__['SYSTEM'].format(
+        lang='English', examples='\n'.join(translate_text.__globals__['EXAMPLES']['en']))
