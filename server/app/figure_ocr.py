@@ -117,29 +117,37 @@ def figure_labels(data: bytes, page: int, figures: list[dict], known: list[list[
         return []
     with _RENDER_LOCK, pymupdf.open(stream=data, filetype='pdf') as doc:
         area = doc[page - 1].rect
-        shots = [(r, doc[page - 1].get_pixmap(clip=r, dpi=DPI)) for r in rasters]
+        # 그림만 찍은 것과 둘레를 조금 넓혀 찍은 것(가장자리에 붙은 글자) 둘 다 읽고, 겹치면 점수가 높은 쪽
+        clips = rasters + [r + (-8, -8, 8, 8) & area for r in rasters]
+        shots = [(clip, doc[page - 1].get_pixmap(clip=clip, dpi=DPI)) for clip in clips]
         strips = [(r, doc[page - 1].get_pixmap(clip=r, dpi=DPI)) for r in _strips(doc[page - 1], rasters)]
         whole = doc[page - 1].get_pixmap(dpi=SCAN_DPI)  # 번역문 자리(칸) 찾기용
     global _failed
     labels = []
-    try:
-        # 그림만 찍어 읽고, 글자가 가장자리에 붙어 있으면 둘레를 조금 넓혀 한 번 더 읽음 (겹치면 점수가 높은 쪽)
-        edge = []
-        for clip, pix in shots:
+    for clip, pix in shots:
+        try:
             out = _read(pix.tobytes('png'), (pix.width, pix.height), True, cache)
-            labels += _found(clip, pix, out, known)
-            edge.append(any(min(p[0] for p in b) < 6 or min(p[1] for p in b) < 6 or max(p[0] for p in b) > pix.width - 6
-                            or max(p[1] for p in b) > pix.height - 6 for b in out.boxes or []))
-        pads = [r + (-8, -8, 8, 8) & area for r, e in zip(rasters, edge) if e]
-        if pads:
-            with _RENDER_LOCK, pymupdf.open(stream=data, filetype='pdf') as doc:
-                shots = [(clip, doc[page - 1].get_pixmap(clip=clip, dpi=DPI)) for clip in pads]
-            for clip, pix in shots:
-                labels += _found(clip, pix, _read(pix.tobytes('png'), (pix.width, pix.height), True, cache), known)
-    except Exception as e:  # 모델을 받지 못한 경우 등
-        _failed = True
-        log.warning('그림 OCR 실패: %s', type(e).__name__)
-        return []
+        except Exception as e:  # 모델을 받지 못한 경우 등
+            _failed = True
+            log.warning('그림 OCR 실패: %s', type(e).__name__)
+            return []
+        scale = 72 / DPI
+        for box, text, score in zip(out.boxes if out.boxes is not None else [], out.txts or [], out.scores or []):
+            text = str(text).strip()
+            if score < MIN_SCORE or not HANGUL.search(text) or GARBLED.search(text):
+                continue
+            xs, ys = [int(p[0]) for p in box], [int(p[1]) for p in box]
+            px = (min(xs), min(ys), max(xs), max(ys))
+            rect = pymupdf.Rect(clip.x0 + px[0] * scale, clip.y0 + px[1] * scale, clip.x0 + px[2] * scale, clip.y0 + px[3] * scale)
+            if any((rect & pymupdf.Rect(k)).get_area() > 0.5 * rect.get_area() for k in known):
+                continue
+            fill, color = _colors(pix, px)
+            size = round(rect.height * 0.72, 1)
+            left, right = _edges(pix, px, fill)
+            cover = pymupdf.Rect(clip.x0 + left * scale, rect.y0 - 1, clip.x0 + right * scale, rect.y1 + 1) | rect + (-1, -1, 1, 1)
+            labels.append({'type': 'label', 'level': 0, 'text': text, 'rect': _r(rect), 'size': size, 'color': color,
+                           'bold': False, 'align': 'center', 'box': _r(label_box(rect, size)), 'ocr': True,
+                           'fill': fill, 'lines': [_r(cover)], 'score': score})
     # 낱말마다 따로 붙인 작은 글자 그림("강의" "계획" "안내"): 위치 찾기 없이 한 줄로 바로 읽음
     for rect, pix in strips:
         try:
@@ -186,29 +194,6 @@ def _split(labels: list[dict]) -> None:
             mid = (lo['rect'][k + 2] + hi['rect'][k]) / 2
             lo['box'][k + 2] = round(min(lo['box'][k + 2], max(mid, lo['rect'][k + 2])), 1)
             hi['box'][k] = round(max(hi['box'][k], min(mid, hi['rect'][k])), 1)
-
-
-def _found(clip: pymupdf.Rect, pix: pymupdf.Pixmap, out, known: list[list[float]]) -> list[dict]:
-    """OCR 결과 중 한글 글자 줄을 label 블록으로 (그림 픽셀 → 페이지 좌표)"""
-    labels = []
-    scale = 72 / DPI
-    for box, text, score in zip(out.boxes if out.boxes is not None else [], out.txts or [], out.scores or []):
-        text = str(text).strip()
-        if score < MIN_SCORE or not HANGUL.search(text) or GARBLED.search(text):
-            continue
-        xs, ys = [int(p[0]) for p in box], [int(p[1]) for p in box]
-        px = (min(xs), min(ys), max(xs), max(ys))
-        rect = pymupdf.Rect(clip.x0 + px[0] * scale, clip.y0 + px[1] * scale, clip.x0 + px[2] * scale, clip.y0 + px[3] * scale)
-        if any((rect & pymupdf.Rect(k)).get_area() > 0.5 * rect.get_area() for k in known):
-            continue
-        fill, color = _colors(pix, px)
-        size = round(rect.height * 0.72, 1)
-        left, right = _edges(pix, px, fill)
-        cover = pymupdf.Rect(clip.x0 + left * scale, rect.y0 - 1, clip.x0 + right * scale, rect.y1 + 1) | rect + (-1, -1, 1, 1)
-        labels.append({'type': 'label', 'level': 0, 'text': text, 'rect': _r(rect), 'size': size, 'color': color,
-                       'bold': False, 'align': 'center', 'box': _r(label_box(rect, size)), 'ocr': True,
-                       'fill': fill, 'lines': [_r(cover)], 'score': score})
-    return labels
 
 
 def _edges(pix: pymupdf.Pixmap, px: tuple[int, int, int, int], fill: str) -> tuple[int, int]:
