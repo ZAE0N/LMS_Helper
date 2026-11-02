@@ -450,6 +450,32 @@ def test_list_items_form_one_group_with_marks_but_cards_stay_apart():
     assert len(cards) == 2
 
 
+def test_deeper_sub_items_stay_in_the_list_group():
+    doc = pymupdf.open()
+    page = doc.new_page(width=1440, height=810)
+    rows = [(80, '자료 수집 단계'), (150, '많은 경우 종이 문서로 존재'), (186, '예) 병원의 진료 기록'),
+            (222, '컴퓨터에 입력해야 해서 시간이 걸림'), (150, '제조업체는 장비 안에 저장')]
+    for k, (x, text) in enumerate(rows):  # 한 단계씩 더 들여 씀
+        page.insert_text((x, 200 + k * 46), '- ' + text, fontname='korea', fontsize=28)
+    blocks = analyze_pdf(doc.tobytes())[0]['blocks']
+    items = [b for b in blocks if b['type'] in ('bullet', 'text')]
+    assert len(items) == 5 and len({b.get('group') for b in items}) == 1 and items[0].get('group') is not None
+
+
+def test_ocr_rooms_in_a_faint_table_do_not_overlap():
+    doc = pymupdf.open()
+    page = doc.new_page(width=600, height=300)
+    gray = (0.82, 0.82, 0.82)  # 바탕과 20쯤 차이 나는 연한 칸선
+    for x0, x1 in ((100, 300), (300, 500)):
+        page.draw_rect(pymupdf.Rect(x0, 100, x1, 160), color=gray, width=0.5)
+    pix = page.get_pixmap(dpi=figure_ocr.SCAN_DPI)
+    box = figure_ocr._room(pix, pymupdf.Rect(180, 122, 220, 138), pymupdf.Rect(90, 90, 510, 170), '#ffffff', [])
+    assert box.x1 <= 300 and box.y0 >= 100 and box.y1 <= 160
+    labels = [{'rect': [180, 122, 220, 138], 'box': [100, 100, 330, 160]}, {'rect': [340, 122, 380, 138], 'box': [290, 100, 500, 160]}]
+    figure_ocr._split(labels)
+    assert labels[0]['box'][2] <= labels[1]['box'][0] and labels[0]['box'][2] >= 220 and labels[1]['box'][0] <= 340
+
+
 def test_small_word_pictures_side_by_side_are_read_as_one_line():
     doc = pymupdf.open()
     page = doc.new_page(width=600, height=400)
