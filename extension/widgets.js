@@ -31,7 +31,9 @@
     to: '끝',
     download: '내려받기',
     view: '교안 보기',
-    langLabel: '교안·챗봇 언어',
+    langLabel: '교안 번역 언어',
+    reviewLang: '문제·리포트 언어',
+    changeInMaterials: '교안 탭에서 변경',
     kinds: { pdf: '교안 (PDF)', slides: '발표 자료', docs: '문서', code: '코드·실습 파일', archive: '압축 파일',
              image: '그림', media: '동영상·소리', etc: '기타' },
     types: { multiple: '객관식', short: '주관식', matching: '연결형' },
@@ -306,7 +308,7 @@
       getCourses()
         .then(cs => list.replaceChildren(...(cs.length ? cs.map(courseBlock) : [h('p', { class: 'lmsh-status' }, KO.noCourses)])))
         .catch(e => list.replaceChildren(h('p', { class: 'lmsh-status' }, `${KO.error} (${e.message})`)));
-    return { el: h('div', { class: 'lmsh-tab' }, list), start };
+    return { el: h('div', { class: 'lmsh-tab' }, prefs(), list), start };
   }
 
   // ---------- 탭: 복습 ----------
@@ -350,7 +352,12 @@
       if (lastQuiz) record.textContent = `${KO.lastResult} ${lastQuiz.score}/${lastQuiz.total}${lastQuiz.weakPage ? ` · ${KO.weak}: ${lastQuiz.weakPage}쪽` : ''}`;
     }
 
+    const langName = h('span', { translate: 'no' });
+    const paintLang = lang => (langName.textContent = LANG_NAMES[CONFIG.LANGS.includes(lang) ? lang : 'en']);
+    store.get('uiLang').then(({ uiLang }) => paintLang(uiLang));
+    chrome.storage.onChanged.addListener((c, area) => area === 'local' && c.uiLang && paintLang(c.uiLang.newValue));
     const el = h('div', { class: 'lmsh-tab' },
+      h('p', { class: 'lmsh-sub lmsh-lang-note' }, `${KO.reviewLang}: `, langName, ` (${KO.changeInMaterials})`),
       h('label', { class: 'lmsh-label' }, KO.reviewFor), select,
       h('div', { class: 'lmsh-chips' }, chips, count),
       h('label', { class: 'lmsh-label' }, KO.pages), h('div', { class: 'lmsh-range' }, from, '~', to),
@@ -359,7 +366,7 @@
     return { el, start, preselect: f => { wanted = f; if (files.length) select.value = String(f.id); } };
   }
 
-  // ---------- 언어 (예전 사이드 패널) ----------
+  // ---------- 교안 번역 언어 (교안 탭 맨 위. 챗봇·복습·리포트도 같은 언어) ----------
   function prefs() {
     const btns = CONFIG.LANGS.map(code => h('button', { type: 'button', 'data-l': code, lang: code,
       onclick: () => store.set({ uiLang: code, uiLangManual: true }) }, LANG_NAMES[code]));
@@ -400,7 +407,6 @@
         h('strong', { class: 'lmsh-brand' }, KO.brand),
         h('nav', { class: 'lmsh-tabs' }, tabBtns),
         h('button', { type: 'button', class: 'lmsh-x', 'aria-label': KO.close, onclick: () => toggle(false) }, '×')),
-      prefs(),
       body);
     const handle = h('button', { type: 'button', class: 'lmsh-handle', onclick: () => toggle() }, KO.brand);
     const root = h('div', { class: 'lmsh-ui' }, handle, drawer);

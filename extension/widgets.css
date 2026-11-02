@@ -51,7 +51,8 @@
 .lmsh-ui .lmsh-body { flex: 1; overflow: auto; padding: 14px 16px 24px; background: #fff; }
 
 /* 언어 */
-.lmsh-ui .lmsh-prefs { padding: 8px 16px; border-bottom: 1px solid var(--lmsh-line); background: var(--lmsh-panel); }
+.lmsh-ui .lmsh-prefs { padding: 0 0 12px; margin-bottom: 12px; border-bottom: 1px solid var(--lmsh-line); }
+.lmsh-ui .lmsh-lang-note { margin: 0 0 10px; }
 .lmsh-ui .lmsh-prefs-row { display: flex; align-items: center; gap: 10px; }
 .lmsh-ui .lmsh-prefs .lmsh-sub { font-weight: 600; color: var(--lmsh-text); }
 
