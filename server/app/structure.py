@@ -536,7 +536,8 @@ def _groups(blocks: list[dict], walls: list, fills: list) -> None:
             last, left = g[-1], min(x['rect'].x0 for x in g)
             lr = last['rect']
             centered = abs((b['outer'].x0 + b['outer'].x1) - (last['outer'].x0 + last['outer'].x1)) / 2 < last['size'] * 0.6
-            same_col = left - 4 <= r.x0 <= left + 120 or centered
+            deepest = max(x['rect'].x0 for x in g)  # 한 단계 더 들여 쓴 하위 항목도 같은 목록
+            same_col = left - 4 <= r.x0 <= max(left + 120, deepest + last['size'] * 2.5) or centered
             if (-0.3 * last['size'] <= r.y0 - lr.y1 < 2.5 * last['size'] and same_col and r.x0 < lr.x1 + 4 and r.x1 > lr.x0 - 4
                     and abs(b['size'] - last['size']) < max(last['size'] * 0.5, 4)
                     and not _between(lr, r, _visible_walls(r, walls, fills, lr))):

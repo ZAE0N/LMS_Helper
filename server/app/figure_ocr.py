@@ -120,7 +120,26 @@ def figure_labels(data: bytes, page: int, figures: list[dict], known: list[list[
                 start |= pymupdf.Rect(line) + (1, 1, -1, -1)
             label['box'] = _r(_room(whole, start, frame, label['fill'], [pymupdf.Rect(o['rect']) for o in out if o is not label]))
             label['wrap'] = True
+    _split(out)
     return out
+
+
+def _split(labels: list[dict]) -> None:
+    """넓힌 자리끼리 겹치면 두 글자 사이 가운데에서 나눔 (원래 글자 자리보다 작게는 줄이지 않음)"""
+    for i, a in enumerate(labels):
+        for b in labels[i + 1:]:
+            if not (pymupdf.Rect(a['box']) & pymupdf.Rect(b['box'])).get_area():
+                continue
+            ra, rb = a['rect'], b['rect']
+            gx = max(rb[0] - ra[2], ra[0] - rb[2])
+            gy = max(rb[1] - ra[3], ra[1] - rb[3])
+            if gx < 0 and gy < 0:  # 글자끼리 겹침: 나눌 수 없음
+                continue
+            k = 0 if gx >= gy else 1  # 옆으로 나란하면 세로선, 위아래면 가로선으로 나눔
+            lo, hi = (a, b) if ra[k] < rb[k] else (b, a)
+            mid = (lo['rect'][k + 2] + hi['rect'][k]) / 2
+            lo['box'][k + 2] = round(min(lo['box'][k + 2], max(mid, lo['rect'][k + 2])), 1)
+            hi['box'][k] = round(max(hi['box'][k], min(mid, hi['rect'][k])), 1)
 
 
 def _edges(pix: pymupdf.Pixmap, px: tuple[int, int, int, int], fill: str) -> tuple[int, int]:
@@ -154,7 +173,7 @@ def _room(pix: pymupdf.Pixmap, r: pymupdf.Rect, frame: pymupdf.Rect, fill: str, 
 
     def plain(x: int, y: int) -> bool:
         i = (y * w + x) * n
-        return sum((data[i + c] - bg[c]) ** 2 for c in range(3)) < 2700
+        return sum((data[i + c] - bg[c]) ** 2 for c in range(3)) < 900  # 연한 칸선(바탕과 17~23 차이)도 선으로, 바탕 잡음(3 이하)은 바탕으로
 
     def column(x: float, y0: float, y1: float) -> bool:
         ys = range(int(y0 * k), max(int(y0 * k) + 1, int(y1 * k)))
