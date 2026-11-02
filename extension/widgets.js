@@ -280,7 +280,7 @@
         onclick: () => openPage(viewerUrl(f, { save: 1 })) }, `${KO.translatedPdf} ⬇`) : null,
       f.kind === 'pdf' ? h('button', { type: 'button', class: 'lmsh-btn', onclick: () => openPage(viewerUrl(f)) }, KO.view) : null);
 
-    const kindGroup = (kind, files) => h('details', { class: 'lmsh-kind', open: kind === 'pdf' },
+    const kindGroup = (kind, files) => h('details', { class: 'lmsh-kind' },
       h('summary', {}, KO.kinds[kind], h('span', { class: 'lmsh-count' }, String(files.length))),
       files.map(fileRow));
 

@@ -105,7 +105,7 @@ mark { background: linear-gradient(transparent 52%, var(--hl) 52%); color: inher
 .ov.label, .ov.center { display: flex; align-items: center; }
 .ov.center { justify-content: center; text-align: center; }
 .ov.center:not(.label) { align-items: flex-start; }
-.ov.nowrap, .ov.ocr { white-space: nowrap; }
+.ov.nowrap { white-space: nowrap; }
 .ov.comment, .ov.codeline { display: flex; align-items: center; line-height: 1.05; white-space: pre; font-family: Consolas, "D2Coding", monospace; }
 /* 목록 묶음: 항목을 위에서부터 쌓음. 글머리 기호(.mk)는 원래 자리에 다시 그림 */
 .ov.flow { white-space: normal; }
