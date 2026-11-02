@@ -30,6 +30,7 @@ a { color: var(--accent); }
 .titles p { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .demo { font-size: 12px; background: var(--warn-soft); color: var(--warn); border-radius: 6px; padding: 2px 8px; font-weight: 600; }
 .lang { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.lang-pick { border: 1px solid var(--line); border-radius: 7px; padding: 4px 8px; height: 30px; background: var(--card); font-size: 13px; cursor: pointer; }
 main { flex: 1; min-height: 0; }
 
 /* 공통 */

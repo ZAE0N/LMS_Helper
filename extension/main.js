@@ -7,9 +7,13 @@
   App.anonId = saved.anonId || null;
   const { t, lang } = App;
   document.documentElement.lang = lang;
-  document.getElementById('lang').textContent = I18N[lang].langName;
-
   const mode = ['review', 'report'].includes(params.get('mode')) ? params.get('mode') : 'doc';
+  const langEl = document.getElementById('lang');
+  if (mode === 'doc') { // 교안 화면에서만 언어를 바꿈 → 그 언어로 다시 엶 (처음이면 서버가 번역)
+    langEl.replaceWith(App.h('select', { class: 'lang-pick', id: 'lang', 'aria-label': t.docLang, translate: 'no',
+      onchange: async e => { await App.store.set({ uiLang: e.target.value, uiLangManual: true }); location.reload(); } },
+    CONFIG.LANGS.map(code => App.h('option', { value: code, selected: code === lang }, I18N[code].langName))));
+  } else langEl.textContent = I18N[lang].langName;
   const demo = { doc: CONFIG.MOCK_API.chat, review: CONFIG.MOCK_API.quiz, report: CONFIG.MOCK_API.report }[mode];
   const demoTag = document.getElementById('demo');
   demoTag.hidden = !demo;
