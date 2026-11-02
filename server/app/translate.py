@@ -30,20 +30,34 @@ Lang = Literal["en", "ru", "ko"]
 HANGUL = re.compile(r"[가-힣]")
 UNTRANSLATED_RATIO = 0.15
 
+# 괄호 속 한국어 예시 (원문 → 번역). 영어(한국어) 순서도 넣어야 모델이 괄호 속 한국어를 병기로 보고 남기지 않음
+EXAMPLES = {
+    "en": ["정밀도(Precision) → Precision", "Precision(정밀도) → Precision",
+           "FP(False Positive / 1종 오류) → FP (False Positive / Type I error)",
+           "확정 손실(스킬라) → certain loss (Scylla)"],
+    "ru": ["정밀도(Precision) → точность (Precision)", "Precision(정밀도) → Precision (точность)",
+           "FP(False Positive / 1종 오류) → FP (False Positive / ошибка первого рода)",
+           "확정 손실(스킬라) → гарантированные потери (Сцилла)"],
+}
+
 SYSTEM = """You translate Korean university course materials into {lang}.
 Rules:
 1. Keep every placeholder like ⟦C1⟧ exactly once, unchanged, in place.
-2. Follow the glossary exactly (KEEP / FIXED / BILINGUAL).
+2. Follow the glossary exactly (KEEP / FIXED / BILINGUAL). Only the glossary decides which Korean stays in Korean.
 3. Keep line breaks and list structure. Do not add explanations.
    A paragraph that starts with a marker like ⟦B3⟧ must keep that marker unchanged at its start.
 4. Proper nouns: use the official or widely used {lang} name when one exists
-   (for example 인하공업전문대학 → Inha Technical College, 스킬라 → Scylla). Keep Korean-only proper nouns that have
-   no widely used {lang} name (people's names, Korean place, organization or service names) exactly as written in Korean.
-5. Translate every other Korean word, including words inside parentheses. Keep English that is already in the text
-   as it is: 정밀도(Precision) → the {lang} word for 정밀도 followed by (Precision). If that {lang} word is the same
-   as the English, write it only once.
-6. Output only the translation."""
-PROMPT_VERSION = "p5"  # 위 규칙을 바꾸면 올려서 저장된 페이지 번역을 다시 만듦
+   (for example 인하공업전문대학 → Inha Technical College). Foreign or mythological names written in Korean letters
+   (스킬라, 카리브디스) take their usual {lang} spelling. Keep Korean-only proper nouns that have no widely used {lang}
+   name (people's names, Korean place, organization or service names) exactly as written in Korean.
+5. Korean inside parentheses is ordinary text: translate it. It is not an annotation to keep.
+   Keep English that is already in the text as it is, in either order. If the {lang} word is the same as the English
+   next to it, write it only once. Examples:
+{examples}
+6. Before answering, check your whole output: Hangul may remain only for glossary KEEP or BILINGUAL terms and
+   Korean-only proper nouns from rule 4. Translate any other Korean, including inside parentheses and next to English.
+7. Output only the translation."""
+PROMPT_VERSION = "p6"  # 위 규칙을 바꾸면 올려서 저장된 페이지 번역을 다시 만듦
 
 USER = """Glossary:
 {glossary}
@@ -87,7 +101,7 @@ def translate_text(text: str, lang: str, terms_all: list[g.Term], llm: LLM) -> d
     masked, saved = pr.protect(text)
     terms = g.find(masked, terms_all)
     block = g.prompt_block(terms, lang) or "(none)"
-    system = SYSTEM.format(lang=LANGS[lang])
+    system = SYSTEM.format(lang=LANGS[lang], examples="\n".join(f"   {x}" for x in EXAMPLES.get(lang, [])))
 
     def run(prompt: str) -> tuple[str, list[str]]:
         out = llm.chat(system, prompt)
@@ -100,8 +114,9 @@ def translate_text(text: str, lang: str, terms_all: list[g.Term], llm: LLM) -> d
     # 남은 한국어 낱말은 고칠 기회를 한 번 더 줌 (한국에만 있는 이름이면 그대로 둬도 됨, 문제로 표시하지 않음)
     left = _left_korean(out, terms)
     if issues or left:
-        notes = issues + ([f"Korean words left untranslated: {', '.join(left)}. Translate them unless they are "
-                           f"Korean-only names of people, places or organizations."] if left else [])
+        notes = issues + ([f"Korean words left untranslated: {', '.join(left)}. Translate each of them, also when it is "
+                           f"inside parentheses or next to English, unless it is a Korean-only name of a person, place "
+                           f"or organization."] if left else [])
         out, issues = run(RETRY.format(issues="\n".join(f"- {i}" for i in notes), glossary=block, text=masked))
 
     return {"translated": pr.restore(out, saved), "terms": [t.term for t in terms], "issues": issues}
